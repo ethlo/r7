@@ -1,0 +1,243 @@
+package com.ethlo.r7.api;
+
+/**
+ * The text a header or attribute is allowed to carry.
+ * <p>
+ * HTTP/1.1 header field values are ISO-8859-1 (latin-1) on the wire, and the journal
+ * stores them as the same bytes, so a value from a client always round-trips unchanged.
+ * A value set <em>programmatically</em> by a filter is a Java string and can contain
+ * anything — and anything outside latin-1 cannot be represented. The journal writer
+ * truncates each character to its low byte, so {@code U+2013} would be stored as
+ * {@code 0x13} and the original would be unrecoverable.
+ * <p>
+ * The gateway therefore refuses such a value at the point the filter sets it, rather than
+ * silently storing a different one. Rejecting here rather than at journal-write time is
+ * deliberate:
+ * <ul>
+ *   <li>the error names the filter that produced the value, instead of surfacing much
+ *       later as mojibake in an audit record;</li>
+ *   <li>it is consistent with the gateway being fail-closed — a request whose metadata
+ *       cannot be recorded faithfully is not quietly recorded wrongly;</li>
+ *   <li>it keeps the check out of the journal write path.</li>
+ * </ul>
+ * A filter that needs to carry arbitrary Unicode through an attribute should encode it
+ * explicitly, for example base64 or percent-encoding, and decode it in the consumer. The
+ * gateway will not do that silently, because a re-encoded value is indistinguishable from
+ * a corrupted one to whoever reads the audit trail.
+ *
+ * @see <a href="https://www.rfc-editor.org/rfc/rfc9110#section-5.5">RFC 9110 §5.5</a>
+ */
+public final class TextValues
+{
+    /**
+     * Highest code point that can be stored. Everything up to and including this is one
+     * byte in ISO-8859-1.
+     */
+    public static final char MAX_STORABLE = 0x00FF;
+
+    private TextValues()
+    {
+    }
+
+    /**
+     * Index reported when the value is absent altogether rather than containing a
+     * character that cannot be stored.
+     */
+    public static final int ABSENT = -1;
+
+    /**
+     * Index of the first character that cannot be stored, or {@code -1} if the whole
+     * string can be. A {@code null} value reports {@code -1} here; use
+     * {@link #requireStorable(String, String)} to reject it.
+     * <p>
+     * A plain scan with no allocation. Header values are short, and this runs on the
+     * request path only when a filter actually sets one.
+     */
+    public static int firstUnstorableIndex(final String value)
+    {
+        if (value == null)
+        {
+            return -1;
+        }
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            if (value.charAt(i) > MAX_STORABLE)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Whether the value can be stored. {@code null} cannot.
+     */
+    public static boolean isStorable(final String value)
+    {
+        return value != null && firstUnstorableIndex(value) < 0;
+    }
+
+    /**
+     * Returns the value unchanged, or throws if it cannot be represented.
+     *
+     * @param field the header or attribute name, used in the error message
+     * @throws InvalidTextValueException if the value is {@code null}, or if any character
+     *                                   is above {@link #MAX_STORABLE}
+     */
+    public static String requireStorable(final String field, final String value)
+    {
+        if (value == null)
+        {
+            // A null would reach the journal writer as a null and fail there, far from
+            // the filter that set it. Refuse it at the same place as any other value the
+            // gateway cannot record.
+            throw new InvalidTextValueException(
+                    "Cannot set '" + field + "' to null. Remove the entry instead if it should not be present.",
+                    field, ABSENT);
+        }
+
+        final int index = firstUnstorableIndex(value);
+        if (index < 0)
+        {
+            return value;
+        }
+
+        throw new InvalidTextValueException(String.format(
+                "Cannot set '%s': character U+%04X at index %d is outside ISO-8859-1 and cannot be represented. "
+                        + "Encode the value (for example base64) if it must carry arbitrary Unicode.",
+                field, (int) value.charAt(index), index), field, index);
+    }
+
+    /**
+     * Index of the first C0 control character or DEL in the value, or {@code -1} if there
+     * is none. Unlike {@link #firstUnstorableIndex(String)}, this also catches CR/LF and
+     * other control characters that are perfectly storable in ISO-8859-1 but are never
+     * legitimate inside a single header value, path segment or URI component — letting one
+     * through lets an attacker smuggle a line break into text that is later written
+     * verbatim onto the wire (e.g. request/response splitting).
+     */
+    public static int firstControlCharacterIndex(final String value)
+    {
+        if (value == null)
+        {
+            return -1;
+        }
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char c = value.charAt(i);
+            if (c < 0x20 || c == 0x7F)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Returns the value unchanged, or throws if it contains a C0 control character or DEL.
+     *
+     * @param field the header, attribute or path field name, used in the error message
+     * @throws InvalidTextValueException if {@code value} is {@code null} or contains a
+     *                                    control character
+     */
+    public static String requireNoControlCharacters(final String field, final String value)
+    {
+        if (value == null)
+        {
+            throw new InvalidTextValueException(
+                    "Cannot set '" + field + "' to null.", field, ABSENT);
+        }
+
+        final int index = firstControlCharacterIndex(value);
+        if (index < 0)
+        {
+            return value;
+        }
+
+        throw new InvalidTextValueException(String.format(
+                "Cannot set '%s': control character U+%04X at index %d is not permitted here.",
+                field, (int) value.charAt(index), index), field, index);
+    }
+
+    /**
+     * As {@link #requireStorable(String, String)}, and also refuses the control characters a
+     * header value may never carry: every C0 control except HTAB, and DEL. A line break in a
+     * value set by a filter would otherwise split the upstream request, or the response.
+     *
+     * @param field the header name, used in the error message
+     * @throws InvalidTextValueException if the value is {@code null}, has a character above
+     *                                   {@link #MAX_STORABLE}, or has a forbidden control character
+     */
+    public static String requireHeaderValue(final String field, final String value)
+    {
+        requireStorable(field, value);
+        for (int i = 0, len = value.length(); i < len; i++)
+        {
+            final char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7F)
+            {
+                throw new InvalidTextValueException(String.format(
+                        "Cannot set header '%s': control character U+%04X at index %d is not permitted in a header value.",
+                        field, (int) c, i), field, i);
+            }
+        }
+        return value;
+    }
+
+    /**
+     * Characters an HTTP token may contain beyond letters and digits (RFC 9110 §5.6.2).
+     */
+    private static final String TOKEN_SPECIALS = "!#$%&'*+-.^_`|~";
+
+    /**
+     * Returns the name unchanged, or throws unless it is a non-empty HTTP token (RFC 9110
+     * §5.6.2). {@code HttpString.tryFromString} accepts spaces, colons and line breaks, each of
+     * which would write a malformed or split header line, so the check belongs here, where every
+     * filter - extensions included - sets a header name.
+     *
+     * @throws InvalidTextValueException if the name is {@code null}, empty, or has a character
+     *                                   outside the token set
+     */
+    public static String requireHeaderName(final String name)
+    {
+        requireStorableName(name);
+        if (name.isEmpty())
+        {
+            throw new InvalidTextValueException("Header name must not be empty.", name, ABSENT);
+        }
+        for (int i = 0, len = name.length(); i < len; i++)
+        {
+            final char c = name.charAt(i);
+            final boolean tokenChar = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || TOKEN_SPECIALS.indexOf(c) >= 0;
+            if (!tokenChar)
+            {
+                throw new InvalidTextValueException(String.format(
+                        "Header name '%s' has character U+%04X at index %d, which is not permitted in an HTTP token.",
+                        name, (int) c, i), name, i);
+            }
+        }
+        return name;
+    }
+
+    /**
+     * As {@link #requireStorable(String, String)}, for the name itself.
+     */
+    public static String requireStorableName(final String name)
+    {
+        if (name == null)
+        {
+            throw new InvalidTextValueException("Header or attribute name must not be null.", null, ABSENT);
+        }
+
+        final int index = firstUnstorableIndex(name);
+        if (index < 0)
+        {
+            return name;
+        }
+
+        throw new InvalidTextValueException(String.format(
+                "Invalid name '%s': character U+%04X at index %d is outside ISO-8859-1.",
+                name, (int) name.charAt(index), index), name, index);
+    }
+}

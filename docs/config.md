@@ -1,0 +1,1447 @@
+# r7 Config Reference
+
+## 1. Core Architecture & Semantics
+
+The r7 gateway is configured using a declarative YAML file called `routes.yaml`. This configuration defines how incoming requests are matched, mutated, routed to upstream targets, and logged.
+
+### Configuration Validation
+
+The r7 configuration engine is strictly validated at startup. The gateway will **fail-fast and refuse to start** if it detects:
+
+* Unknown filters, predicates, or configuration keys.
+* Invalid regular expressions or malformed CIDR blocks.
+* Cyclic/recursive `fallback` routing loops.
+* Unresolvable environment variables without default values.
+* Duplicate ids. Route ids and group ids share one namespace, so `gateway.route.group` and `fallback.route_id` always name one thing: `[routes.a] id is not unique: group and route ids share one namespace`.
+* An entry of `routes` that is neither a route nor a group: `needs 'id' for a route, or 'group' for a group of routes`; one with both, a group inside a group, or a route with `routes` is refused by name too.
+* A `null` that would remove an inherited value (`upstream: null`, `targets: null`, `filters: null`): `null cannot remove an inherited upstream; leave the key out to inherit it.`
+* A journal rule that cannot be honoured, such as one that changes a request level that can be `FULL` after its body has streamed (see [Journal Rules](#journal-rules-on_request-on_response)).
+
+### Root, Groups and Routes
+
+Routes that share filters, an upstream or a match say so once. `routes.yaml` has three levels: the root, groups and routes. `filters` and `upstream` are declared at any of them, and a group's `match` is ANDed in front of each of its routes' own:
+
+```yaml
+version: "2026-10-13"
+
+filters:                     # every route, one instance each for the gateway
+  - SimpleMetrics
+
+upstream:                    # inherited key by key
+  timeouts:
+    read: 10s
+  targets:
+    - url: "http://default-backend:8080"
+
+routes:
+  - group: api
+    match:
+      - PathPrefix:
+          prefix: /api/
+    filters:                 # the group's routes, one instance each for the group
+      - RateLimiter:
+          capacity: 100
+          refill_tokens: 100
+          refill_period: 1s
+    upstream:
+      targets:
+        - url: "http://api-backend:8080"
+    routes:
+      - id: orders
+        match:
+          - PathPrefix:
+              prefix: /api/orders/
+        upstream:
+          timeouts:
+            read: 2s         # targets from the group, connect from the default
+      - id: users
+        match:
+          - PathPrefix:
+              prefix: /api/users/
+
+  - id: site                 # the root's targets and timeouts
+    match:
+      - PathPrefix:
+          prefix: /
+```
+
+* **Order.** Entries are tried in the order written, a group's routes in place. A group's `match` is tested once; a request it does not match skips the group's routes, and one it matches but none of its routes does goes on to the entry after the group. A group without `match` matches every request. Groups nest one level: a group holds routes, not groups.
+* **Filters.** A request runs the root's filters, then its group's, then its route's own, and their response phases in the reverse order. A filter is one instance for everything beneath the level it is declared on: a `RateLimiter` at the root is one set of buckets for the gateway, one in a group is one set for the group's routes. A `CircuitBreaker` guards one upstream, so it is a route's filter only: at the root or on a group it is refused at startup with `[filters[0]] CircuitBreaker can be declared on a route only, not on the root.`, and the editor flags it there.
+* **Upstream.** Each key of `upstream` (`targets`, `timeouts`, `health_check`, `strategy`, `fallback`, `preserve_host`) comes from the route if it names it, else its group, else the root. A route with `targets` at no level has no upstream, which suits a route whose filters answer every request (`ReturnResponse`, `StaticContent`); if the route or its group names `upstream` keys but no level names `targets`, the file is refused: `[routes.api.routes.orders.upstream.targets] Upstream configuration must contain at least one target configuration: name targets here, on group 'api' or at the root`. Leaving a key out inherits it; `null` cannot remove an inherited value.
+* **Shared upstreams.** An upstream is one connection pool and one health state for every route that takes all of its keys from the same declaration: in the example, `users` shares the group's upstream with any other route of `api` that names no `upstream` key, so a target the health check marks down is down for all of them, and `site` shares the root's with every route where neither the route nor its group names a key. A route that names any key, as `orders` does, has an upstream of its own. A reload builds new upstreams; requests in flight finish on the old ones.
+* **Journal.** A route in a group is journaled with `gateway.route.group` next to `gateway.route.id`.
+
+Every load logs the file's `version` and the SHA-256 of the file as read, before interpolation: `Configuration routes.yaml successfully loaded 3 routes from version 2026-10-13, source digest sha256:…`. The management API shows them as `route_version` and `route_source_digest`, so a running gateway names the exact file it loaded.
+
+### Environment Variable Interpolation
+
+Configuration values support environment variable injection using the `${VAR_NAME:default_value}` syntax.
+
+* The file is parsed as YAML first, then each individual scalar value is interpolated - not the
+  raw file text. An environment value can therefore never add, remove, or restructure YAML nodes
+  (e.g. by containing a colon or a newline); it can only become part of the text of the value it
+  was substituted into.
+* Values are injected prior to type-casting.
+* If a variable is missing and no default is provided, configuration validation fails.
+* `$${...}` is not interpolated: it stands for the literal text `${...}`. Use it where a value
+  needs `${` for its own syntax. The `RewritePath` and `TemplateRedirect` templates do not: they
+  write a named group as `{name}`, so `${...}` there is always an environment variable.
+
+### Header Case Sensitivity
+
+In strict accordance with RFC 7230, **all HTTP header evaluations in r7 are case-insensitive**. This applies to predicate matching (`RequestHeader`), filter mutations (`SetRequestHeader`), and CORS validations. It also holds for the headers a journal consumer reads back through `R7Tailer`: a lookup for `content-type` finds a header journaled as `Content-Type`, while iteration still shows each name as it was written. Folding is ASCII-only and does not depend on the JVM's default locale.
+
+---
+
+## 2. Operational Guarantees
+
+As a deterministic request execution engine, r7 provides strict operational guarantees for infrastructure reliability.
+
+### Deterministic Behavior
+
+* **Evaluation:** Route evaluation order is strictly stable.
+* **Execution:** Filter execution order is strictly stable. No implicit parallel filter execution occurs.
+* **Routing:** Upstream target selection is strictly deterministic within the chosen load-balancing strategy.
+
+### Failure Boundaries (Fail-Closed)
+
+r7 strictly separates intentional request termination from runtime failures. If a filter encounters a runtime exception (e.g., malformed template substitution or regex execution failure), r7 **fails closed**. The pipeline immediately halts, bypasses all remaining filters (including response filters), and returns a `500 Internal Server Error` to prevent unsafe, partially mutated requests from routing upstream.
+
+### Hot Reloads & State
+
+r7 supports zero-downtime configuration reloads.
+
+* Swapping the `routes.yaml` configuration is an **atomic operation**.
+* In-flight requests are gracefully drained using the pipeline configuration that was active when the request was accepted.
+* Stateful filter data (like `CircuitBreaker` tripping states and `RateLimiter` token buckets) is intentionally reset upon reload. This is **by design and not configurable**, guaranteeing immediate, strict adherence to the new configuration parameters.
+* A filter is instantiated **once per declaration**, and that instance is shared by every route beneath the level it is declared on. A `RateLimiter` in the root `filters` enforces one limit across the whole gateway, drawing from one set of buckets no matter which route a request matched; one in a group's `filters` enforces one limit across that group's routes. The same filter declared under several routes' own `filters:` blocks gives each route its own independent instance and state.
+
+---
+
+## 3. Execution Semantics
+
+Understanding the exact pipeline order is critical for operating r7. For a given HTTP request, processing occurs strictly in this order:
+
+0. **Request Validation:** Before anything else runs, a request with a bad [Transfer-Encoding](#transfer-encoding) or an [ambiguous path](#ambiguous-paths) is rejected with `400 Bad Request`.
+1. **Route Predicate Evaluation:** Routes are evaluated in declaration order; a group's `match` is tested once, before its routes' own (see [Root, Groups and Routes](#root-groups-and-routes)).
+2. **Route Match & Halt:** The *first* route whose predicates evaluate to `true` is selected. **Once a route is matched, no further routes are evaluated.** If no route matches, a `404 Not Found` is returned.
+3. **Root Request Filters:** The root `filters`, in declaration order.
+4. **Group and Route Request Filters:** The matched route's group's `filters`, then the route's own, in declaration order.
+5. **Upstream Proxy Execution:** The request is dispatched to the load-balanced target.
+6. **Route and Group Response Filters:** The route's own response phases, then its group's.
+7. **Root Response Filters:** The root's response phases, last.
+8. **Async Journaling:** The request/response pair is dispatched to disk.
+
+A request a filter answers itself (`ReturnResponse`, a refusal, a redirect, `StaticContent`) skips step 5 and goes through steps 6 to 8 like a proxied one: the response filters run once, just before the response head is written, on the status and headers of the answer as it was made, and a header they set is the one the client receives.
+
+### Ambiguous Paths
+
+Route predicates match the decoded request path, while the upstream receives the raw URI and applies its own normalisation. If the two disagree, a request can match a permissive route yet reach a resource that another route protects — `/public/../admin` matches `PathPrefix: /public`, and most upstreams serve it as `/admin`. r7 therefore refuses, with `400 Bad Request`, any request whose decoded path contains:
+
+* a `.` or `..` segment, including with path parameters (`..;x`, which Tomcat and Spring treat as `..`);
+* a backslash (`\`), which some servers treat as `/`;
+* a control character (for example from `%00` or `%0a`);
+* percent-encoding of `.`, `/`, `\` or `%` that is still present after decoding — an encoded slash (`%2F`) or double-encoding such as `%252e`.
+
+The check always runs and is not configurable: no route is consulted and no filter runs for a rejected request. It is journaled only when [Unrouted Requests](#unrouted-requests-routesyaml-unrouted) is configured. This deliberately refuses some request targets that are valid URIs: a path such as `/a/../b` is legal on the wire, but it is also exactly the shape that lets a gateway and an upstream disagree. Browsers and most HTTP client libraries already resolve dot-segments before sending (RFC 3986 §5.2.4), so their requests are unaffected; a client that sends them literally must normalise its paths first.
+
+### Transfer-Encoding
+
+A request `Transfer-Encoding` other than exactly `chunked` (for example `chunked, identity`, `gzip, chunked`, or the header repeated) is refused with `400 Bad Request` before routing, and the connection is closed. RFC 9112 §6.3 requires rejecting a request whose final coding is not `chunked`, and a list that r7 and an upstream read differently would make them disagree on where the body ends.
+
+### Phase-Aware Filters
+
+Filters are inherently phase-aware. Although they are declared in a single, unified list (the root's, a group's or a route's `filters` block), they automatically participate only in the lifecycle phases relevant to their behavior.
+
+* *Example:* `AddRequestHeader` executes immediately during phase 3 or 4. However, response-mutating filters like `SetResponseHeader` are registered then but their execution is **deferred** until phase 6 or 7 (after the upstream response is received or generated).
+
+### Short-Circuiting Flow
+
+Intentional short-circuits (such as a failed `Require*` validation or a `ReturnResponse` execution) are standard pipeline control flows, not runtime exceptions.
+
+If a filter short-circuits execution, the remaining request filters and phase 5 (Upstream Proxy Execution) are **skipped**. The pipeline immediately transitions to the response phases of the filters whose request phase ran, innermost first, against the generated response context.
+
+---
+
+## 4. Upstream Configuration
+
+The `upstream` block defines where r7 forwards requests, managing load balancing, active health monitoring, and resiliency. It is written on a route, a group or the root, and each key is inherited separately: see [Root, Groups and Routes](#root-groups-and-routes).
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `strategy` | Enum | `ROUND_ROBIN` | How requests are spread across the available targets. `ROUND_ROBIN` is currently the only strategy: each request starts at the next target in turn, passing over targets that are down or whose connection pool is full. |
+| `targets` | List | Required, at some level | A list of downstream nodes (`url`) capable of handling the request. Inherited from the group or the root when the route does not name it. |
+| `health_check` | Object | None | Active background health monitoring. |
+| `timeouts` | Object | None | Networking timeouts for this upstream. |
+| `fallback` | Object | None | Alternate routing logic if primary targets fail. |
+| `preserve_host` | Boolean | `false` | Sends the client's `Host` header to the target instead of the target's own, for an upstream that serves several sites by name. A request without a `Host` gets the target's. TLS server name indication and the certificate check still use the target's host. `X-Forwarded-Host` carries the client's `Host` either way. |
+
+### Targets
+
+Defines the physical endpoints requests will be routed to. The upstream must contain at least one target.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `url` | String | Yes | The fully qualified URL (must begin with `http://` or `https://`). For `https`, the certificate chain is checked against the JVM trust store and the certificate must name the target's host. |
+
+### Health Check (`health_check`)
+
+Configures background probes to automatically evict and restore nodes.
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `path` | String | `/health` | The URI path appended to the target URL for the ping request. |
+| `interval` | Duration | `10s` | The frequency of background HTTP probes. |
+| `rise` | Integer | `2` | Consecutive successes required to mark an offline node healthy. |
+| `fall` | Integer | `2` | Consecutive failures required to evict a healthy node. |
+| `override` | Enum | `NONE` | **Warning:** `FORCE_DOWN` evicts the target regardless of probe success. `FORCE_UP` routes to the target regardless of probe failure. |
+
+The monitor starts when the routes are loaded, not with a route's first request, so a dead target is found before traffic reaches it. Targets start out healthy; the first probe runs one `interval` after loading, and a target is evicted after `fall` failed probes. A hot reload starts monitors for the new routes and stops the previous ones, so health state starts over.
+
+### Timeouts (`timeouts`)
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `read` | Duration | `30s` | The longest wait for any one read from the upstream: the response head, or the next bytes of its body. A slow body that keeps sending bytes is not cut off by it; the exchange as a whole is bounded by the proxy's `max_request_time`. A wait is checked every 250 ms, so it ends at most 250 ms past `read`. At least `1ms` and at most `24d` (2147483647 ms, the proxy client's int millisecond limit). |
+| `connect` | Duration | `5s` | Maximum time to wait for a connection to a target, including the TLS handshake for `https` targets. A target that does not answer in time counts as unreachable, and nothing has been sent to it, so the request can go to another target. Connecting never runs past the proxy's `max_request_time`: once that is used up the request is answered `504`. At least `1ms` and at most `24d`. |
+
+### Fallback (`fallback`)
+
+Configures behavior when none of the route's upstream targets is available (all marked down by `health_check`). **Cyclic references (`a -> b -> a`) are rejected at startup**; a chain `a -> b -> c` is allowed, and each route in it falls back only when its own targets are down.
+
+The request is handed to the fallback route **before** the first route's upstream-phase filters run, and is then processed as if it had matched the fallback route: its request filters, its upstream filters, its upstream (or its own fallback), and its response filters. Upstream-phase filters of the first route (`InjectBasicAuth`, `SetRequestHeader`, rewrites) therefore never reach the fallback's upstream. Filters whose request phase already ran for the first route - the root's, its group's and its own request filters such as `Cors` or `RateLimiter` - are not run again, but still receive their later phases (upstream, response and completion) on the same instances, so their state stays balanced and their clean-up applies to the fallback upstream too. The fallback's group's filters run if it is in another group; root filters run once per request. The exchange is journaled at the first route's journal levels and tagged with `gateway.fallback.id`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `route_id` | String | Yes | The `id` of another route to execute (e.g., a stubbed mock route). A group's id is refused: a fallback names a route. |
+
+A `fallback` on a group or at the root is inherited by every route beneath it, the fallback route included if it is there, and a route whose inherited fallback names itself is refused: `Route 'spare' inherits fallback.route_id 'spare' from group 'api', which names the route itself.` Declare the fallback route outside the group, or the `fallback` on the routes that use it. A `fallback` at the root therefore always names a route beneath it, and is always refused.
+
+---
+
+## 5. Predicates
+
+Predicates decide whether a request matches a route, and whether a [journal rule](#journal-rules-on_request-on_response) fires.
+
+* **Regex Semantics:** All regex predicates and `RequireMatch*` filters use standard Java Regex syntax and must match the **whole value**, as if anchored with `^` and `$`: `user` does not match `superuser`. Use `.*user.*` to match anywhere in the value. Matching is **case-sensitive** unless the inline flag `(?i)` is used.
+* **Repeated Values:** When a query parameter, header or cookie occurs more than once, a value check (`QueryParameter`, `MatchQueryParameter`, `RequestHeader`, `MatchRequestHeader`, `Cookie`, `MatchCookie`, and the `RequireMatch*` filters) passes only if **every** occurrence passes. Upstream frameworks disagree about which occurrence wins (the first, the last, or all of them combined), so `?role=user&role=admin` must not satisfy a check on `role` that the upstream then reads as `admin`. A header value that is a comma-separated list on one line is matched as one value. Presence checks (`Has*`, `Require*` without a pattern) are unaffected.
+* **Regex Cost:** Every match of a configured pattern against request data (predicates, `RequireMatch*`, `RewritePath`, `TemplateRedirect`) is limited to one million character reads, which a runaway match exhausts in a few milliseconds. Java's regex engine backtracks, and patterns with repeated groups around `.*` (`^(.*a){12}$`), several `.*` in a row, or backreferences can take seconds per request on a crafted input; a match that exceeds the limit answers the request with `500` instead of keeping a core busy. In a filter this is an ordinary refusal: response filters still run and the exchange is journaled. A normal, linear pattern never comes close; if requests fail this way, rewrite the pattern.
+* **Exact or Regex:** `Path`, `PathPrefix`, `Host`, `RequestHeader`, `QueryParameter` and `Cookie` compare values literally; their `Match*` siblings take a regex. A literal value that looks like a regex (`/api/.*`, `^Bearer .+$`, `[a-f0-9]{32}`), or a path or host with Spring Cloud Gateway wildcards or templates (`/api/**`, `/users/{id}`, `*.example.com`), is logged as a warning when the routes load, with its path and line, because it would only match a client that sends those exact characters.
+* **The client's request:** A request predicate tests the request as the client sent it, wherever it is used: in a route's `match` and in journal rules alike, so a `RewritePath` or `SetRequestHeader` never changes what it matches. It takes no `leg`; only [response predicates](#response-matching) do, and one written on a request predicate is refused: `[routes.x.match[0].PathPrefix.leg] PathPrefix tests the request as the client sent it and has no leg; leg applies to response predicates.`
+* **Empty Matches:** An empty match block (`match: []`) never evaluates to true. This behavior is intentional to prevent accidental catch-all routes caused by omitted predicates. It is the standard pattern for defining fallback-only routes. Only that list form is fallback-only: any other empty condition, at the top of a match or inside it (`match: {}`, `match: { or: [] }`, `match: { and: [] }`, `- {}`, `not: {}`), is refused at startup.
+
+### Logical Meta-Predicates
+
+* `and`: True if **all** child predicates are true. Short-circuits on first failure.
+* `or`: True if **at least one** child predicate is true. Short-circuits on first success.
+* `not`: Inverts the result of a **single** child condition, written as a mapping (`not: { Method: { methods: [GET] } }`). A list is refused at startup, since `not: [A, B]` reads both as "not all of" and "none of": write `not: { or: [...] }` for none of several, `not: { and: [...] }` for not all of them.
+
+### Sample
+
+Sending a share of traffic to a new version means choosing requests at random. `Sample` matches a share of exchanges, drawn from a random source; in a route's `match` it sends that share to a canary:
+
+```yaml
+routes:
+  - id: checkout-canary
+    match:
+      - PathPrefix:
+          prefix: /checkout/
+      - Sample:
+          rate: 0.05        # one exchange in twenty
+    upstream:
+      targets:
+        - url: "http://checkout-v2:8080"
+  - id: checkout
+    match:
+      - PathPrefix:
+          prefix: /checkout/
+    upstream:
+      targets:
+        - url: "http://checkout:8080"
+```
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `rate` | Number | Yes | The share of exchanges to match: greater than `0`, at most `1`. |
+
+Routing makes one draw per exchange, so every `Sample` in the routes' matches tests the same number: the exchanges `Sample: { rate: 0.05 }` matches are among those `Sample: { rate: 0.1 }` matches, never a separate 5%. That draw is routing's alone: nothing else r7 samples follows the canary. Journal rules make one draw of their own per exchange, shared by every `Sample` in them. `Sample` tests the exchange, not a request, so it has no `leg`, and one written is refused: `[routes.x.match[0].Sample.leg] Sample draws once per exchange and has no leg.`
+
+---
+
+### URI & Path Matching
+
+#### Path
+
+Matches the incoming request against an exact, fully qualified URI path.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `path` | String | Yes | The exact URI string (e.g., `/_internal/health`) to match against the request path. |
+
+#### PathPrefix
+
+Matches if the request path begins with a specific string prefix.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `prefix` | String | Yes | The exact string prefix (e.g., `/api/v1/`) to match against the request path. |
+
+#### MatchPath
+
+Evaluates the request path against a regular expression pattern.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `regexp` | String | Yes | A valid Java regular expression pattern to evaluate against the URI. |
+
+---
+
+### Header Matching
+
+#### RequestHeader
+
+Matches if a specific HTTP header exists and its value exactly matches the provided string.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the HTTP header. |
+| `value` | String | Yes | The exact value the header must contain. |
+
+#### HasRequestHeader
+
+Matches if a specific HTTP header exists in the request, ignoring its value entirely.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the HTTP header to check for. |
+
+#### MatchRequestHeader
+
+Matches if a specific HTTP header exists and its value matches a regular expression.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the HTTP header. |
+| `regexp` | String | Yes | A regex pattern the header value must match. |
+
+---
+
+### Query Parameter Matching
+
+#### QueryParameter
+
+Matches if a specific query parameter exists in the URL and its value exactly matches the provided string.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the query parameter. |
+| `value` | String | Yes | The exact value the query parameter must contain. |
+
+#### HasQueryParameter
+
+Matches if a specific query parameter exists in the URL. This will match even if the parameter is used as a flag with no value (e.g., `?debug`).
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the query parameter to check for. |
+
+#### MatchQueryParameter
+
+Matches if a specific query parameter exists and its value matches a regular expression.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the query parameter. |
+| `regexp` | String | Yes | A regex pattern the parameter value must match. |
+
+---
+
+### Cookie Matching
+
+#### Cookie
+
+Matches if a specific cookie exists in the request and its value exactly matches the provided string.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the cookie. |
+| `value` | String | Yes | The exact value the cookie must contain. |
+
+#### HasCookie
+
+Matches if a specific cookie exists in the request, ignoring its value entirely.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the cookie to check for. |
+
+#### MatchCookie
+
+Matches if a specific cookie exists and its value matches a regular expression.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the cookie. |
+| `regexp` | String | Yes | A regex pattern the cookie value must match. |
+
+---
+
+### Network & Environment Matching
+
+#### Host
+
+Matches the incoming request against a list of allowed `Host` headers. It automatically handles matching with or without port numbers included in the header.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `hosts` | List of Strings | Yes | A list of acceptable hostnames (e.g., `["api.example.com", "v2.example.com"]`). An entry may hold several, separated by commas, so `hosts: ["${HOST_LIST}"]` works for a comma-separated variable. |
+
+#### Method
+
+Matches the HTTP method of the incoming request against a list of allowed methods.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `include` | List of Strings | Yes | A list of allowed HTTP methods (e.g., `["GET", "POST"]`). |
+
+#### RemoteAddr
+
+Matches the client's IP address against a specific IP or a CIDR subnet block. It supports both IPv4 and IPv6. **Evaluates the resolved client address**: the TCP peer, or the client behind a peer listed in [`limits.trusted_proxies`](#limits-configuration-limits). By default no proxy is trusted, so a spoofed `X-Forwarded-For` cannot get past it.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source` | String | Yes | The IP address or CIDR notation (e.g., `192.168.1.5` or `10.0.0.0/24`). |
+
+### Response Matching
+
+Response predicates test the response, so they are accepted only where one exists: in a journal rule's [`on_response`](#journal-rules-on_request-on_response). In a route's `match` or in `on_request` they are refused: `[routes.x.match[0].Status] Status tests a response, which does not exist yet when a route is chosen; use it in on_response.` Each takes a `leg` beside its own parameters: `client`, the default, tests the response the client receives, and `upstream` the response the upstream sent. The two differ when r7 answers itself, as with its own `502` or `504`, and when a filter changes the status or headers. On an exchange no upstream answered, the upstream leg has no response and the predicate does not match, so `Status: { include: [5xx], leg: upstream }` catches the upstream's errors and not r7's.
+
+#### Status
+
+Matches if the response status is one of the listed codes or classes.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `include` | List | Yes | Codes (`404`) and classes (`5xx`, case-insensitive), from `100` to `599`. |
+
+#### ResponseHeader
+
+Matches if every occurrence of a response header exactly matches the provided string.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header. |
+| `value` | String | Yes | The exact value the header must contain. |
+
+#### HasResponseHeader
+
+Matches if the response has the header, ignoring its value.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header to check for. |
+
+#### MatchResponseHeader
+
+Matches if every occurrence of a response header matches a regular expression, within the regex budget.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header. |
+| `regexp` | String | Yes | A regex pattern the header value must match. |
+
+---
+
+## 6. Filters
+
+Filters mutate requests, shape traffic, or enforce security rules after a route is matched.
+
+* **`Add*` Semantics:** Safely appends a non-destructive key/value pair.
+* **`Set*` Semantics:** Destructively replaces existing keys with the new value.
+* **`Remove*` Semantics:** Deletes the specified key entirely.
+* **`Require*` Semantics:** Validates presence or format, transitioning the request to the response phase if validation fails.
+
+### Mutation: Headers, Cookies, and Parameters
+
+#### AddRequestHeader
+
+Appends an HTTP header before forwarding the request to the upstream target.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the HTTP header. |
+| `value` | String | Yes | The value to append to the header. |
+
+#### SetRequestHeader
+
+Replaces an existing HTTP header before forwarding the request upstream.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the HTTP header. |
+| `value` | String | Yes | The value to assign to the header. |
+
+#### AddResponseHeader
+
+Appends an HTTP header on the client response before it is returned to the client.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the HTTP header. |
+| `value` | String | Yes | The value to append to the header. |
+
+#### SetResponseHeader
+
+Replaces an existing HTTP header on the client response.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the HTTP header. |
+| `value` | String | Yes | The value to assign to the header. |
+
+#### RemoveRequestHeader
+
+Deletes a specified HTTP header from the client request before it is forwarded.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header to remove. |
+
+#### RemoveResponseHeader
+
+Deletes a specified HTTP header from the upstream response before it is returned.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the header to remove. |
+
+#### SetRequestCookie
+
+Injects or replaces a cookie directly in the `Cookie` header of the incoming request.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the cookie. |
+| `value` | String | Yes | The value of the cookie. |
+
+#### SetResponseCookie
+
+Injects a `Set-Cookie` response header instructing the client to create or overwrite the cookie.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the cookie. |
+| `value` | String | Yes | The value of the cookie. |
+| `domain` | String | No | The domain scope for the cookie. |
+| `path` | String | No | The path scope for the cookie. |
+| `max_age` | Duration | No | The time-to-live for the cookie. |
+| `secure` | Boolean | No | Requires HTTPS. Defaults to `true` if omitted. |
+| `http_only` | Boolean | No | Prevents client-side script access. Defaults to `true` if omitted. |
+| `same_site` | Enum | No | Cross-site request forgery protection (`Strict`, `Lax`, `None`). Defaults to `Lax`. |
+
+#### RemoveRequestCookie
+
+Deletes a specific cookie from the `Cookie` header before the request is routed upstream.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the cookie to remove. |
+
+#### AddQueryParameter
+
+Appends a new query parameter to the request URL. Multiple parameters with the same name are supported.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the query parameter to add. |
+| `value` | String | Yes | The value of the query parameter. |
+
+#### SetQueryParameter
+
+Replaces any existing query parameter with the specified name.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The name of the query parameter to set. |
+| `value` | String | Yes | The value of the query parameter. |
+
+#### RemoveQueryParameter
+
+Deletes a specific query parameter from the URL before forwarding.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the query parameter to remove. |
+
+#### AddCorrelationId
+
+Automatically injects the gateway's internal request ID into both the upstream request and the client response using the `X-Correlation-Id` header. By default, an `X-Correlation-Id` the client already sent is **replaced**, never appended to: it is client-controlled, and trusting it would let a client plant an arbitrary value in upstream logs and tracing under this gateway's name.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `trust_incoming` | Boolean | No | If `true`, an `X-Correlation-Id` already present on the incoming request is kept (and echoed back to the client) instead of being replaced with r7's own request ID. Defaults to `false`. Only enable this behind a trusted edge that itself controls or strips the header before it reaches r7. |
+
+---
+
+### Mutation: Path & Routing
+
+#### StripPathPrefix
+
+Removes a specified number of structural path segments from the beginning of the request path.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `parts` | Integer | Yes | The number of path segments (separated by `/`) to strip (e.g., `1` removes `/api` from `/api/v1`). Must be greater than 0. |
+
+#### RewritePath
+
+Transforms the upstream request path using regular expressions. Every match of `regexp` is replaced, unless `replacement` sets the query: then only the first is (see below). A numbered group is `$1`, `$2`, a named group is `{name}`, and `\{` is a literal brace (see [Templates](#templates)). A literal `?` in `replacement` starts the query.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `regexp` | String | Yes | The regular expression pattern to match against the request path. |
+| `replacement` | String | Yes | The replacement applied to each match: `$1` for a numbered group, `{name}` for a named one. |
+
+Both filters work on the **decoded** path and the gateway percent-encodes the result before it is sent upstream, so characters the client encoded as data never turn into URI syntax (`/api/a%3Fb` stripped by one part reaches the upstream as `/a%3Fb`, never as `/a?b`). Needless encoding of ordinary characters is normalised (`%41` is sent as `A`). Write a `replacement` in decoded form too: a literal `%20` in it is sent as `%2520`.
+
+A rewritten path gets the same check as the client's path: one with a `.` or `..` segment, a backslash or leftover percent-encoding is answered with `400` and never forwarded. With `replacement: /files/{query.name}`, `?name=../admin` is refused rather than sent as `/files/../admin`.
+
+#### Templates
+
+`RewritePath` `replacement` and `TemplateRedirect` `target` share one syntax:
+
+| Write | For |
+| --- | --- |
+| `$1`, `$2`, ... | the numbered group of the regular expression |
+| `{name}` | the group `(?<name>...)` |
+| `{query.NAME}` | the value of the client's query parameter `NAME` |
+| `\x` | the character `x` literally: `\$` a dollar sign and `\{` a brace. In `RewritePath`, `\?` keeps a question mark in the path, and after the `?`, `\&` and `\=` are characters of a name or value (`?q=a\&b` sets `q` to `a&b`); a `TemplateRedirect` target is already wire-encoded, so write `%3F` there. |
+
+A brace that is not escaped starts a placeholder, and one that names no group, or is never closed, is refused at startup: `[routes.x.filters[0].RewritePath.replacement] {b} needs a source pattern with that named group (write \{ for a literal brace).` The old `$${name}` form is refused too, with `Write a named group as {name}, not $${name}.` In YAML, `\{` is written as is in a plain or single-quoted string, and as `"\\{"` in a double-quoted one.
+
+A literal brace is a character of the result, not URI syntax, so it is sent percent-encoded like any character RFC 3986 does not allow: `target: /a\{b` answers `Location: /a%7Bb`, and a `RewritePath` `replacement` of `/a\{b` reaches the upstream as `/a%7Bb`. r7 never sends a raw brace in a URI.
+
+A `RewritePath` `replacement` with a `?` sets the query the upstream receives:
+
+```yaml
+routes:
+  - id: legacy-items
+    match:
+      - PathPrefix:
+          prefix: /legacy
+    filters:
+      - RewritePath:
+          regexp: "^/legacy/(?<id>[0-9]+)$"
+          replacement: "/items?uid={id}&ref={query.refid}"
+    upstream:
+      targets:
+        - url: "http://127.0.0.1:8081"
+```
+
+Captures and `{query.NAME}` values after the `?` are each one parameter value, so a request cannot add a parameter by what it sends (`/legacy/1%26admin%3Dtrue` sets `uid=1&admin=true`, one value). Nor can it name one: a capture or `{query.NAME}` where a name goes is refused at startup with `A capture or {query.NAME} after the ? must be in a parameter value (name=$1), so a request can not name a parameter.`, and so is a query that ends in a name, where the rest of the path would go: `The query of the replacement must end in a parameter value (name=...), where the rest of the path goes.` A parameter with an empty name (`?=x`, `?&a=1`, `?a=1&&b=2`) is refused at startup too, since upstreams disagree about whether one exists: `Every parameter after the ? needs a name: ?=x, ?&a=1 and ?a=1&&b=2 each have an empty one.` The client's existing parameters are kept by decoded name, value, occurrence and order (the query is then form-encoded as UTF-8), and merged with the rewrite's: a name the rewrite sets replaces every occurrence the client sent (`?uid=123&uid=456` rewritten to `?uid={query.refid}` reaches the upstream as one `uid`), and every other parameter keeps its occurrences and order. A `{query.NAME}` the client left out, or repeated with differing values, is answered with `400`. A replacement with a `?` rewrites the first match only, and what follows the match in the path goes on the end of the last value. Write the replacement decoded, as for the path.
+
+A `?` in `replacement` starts the query. Write `\?` to keep a question mark in the path (`"/a\\?b"` in a double-quoted YAML string). Rewrites do not cascade: each tests the path the client sent, never another rewrite's output, and when several match, the last one declared wins, so a route's rewrite wins over its group's. A rewrite that sets the query must be the only `RewritePath` the route runs, counting the root's and the group's; a second one is refused at startup: `[routes.r.filters] A RewritePath that sets the query (a ? in its replacement) must be the only RewritePath on the route, counting the root's and the group's: give each rewrite a route of its own.`
+
+#### TemplateRedirect
+
+Intercepts the request and immediately issues an HTTP redirect (3xx) based on a regex match of the path and a substitution template.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source` | String | No | The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, with no captures; `target` then holds literal text and `{query.NAME}` placeholders only, and a `$1` or `{name}` is refused at startup (`$1 needs a source pattern with that many groups.`). |
+| `target` | String | Yes | The destination URL template. A numbered group is `$1`, `$2`, ...; a named group is `{name}`; a query parameter's value is `{query.NAME}`; `\$` is a literal `$` and `\{` a literal brace (see [Templates](#templates)). |
+| `status` | Integer | No | The HTTP redirect status code: `301`, `302`, `303`, `307` or `308`. Defaults to `302` (Found). Any other code is refused at startup: a client follows a `Location` only on a redirect. |
+
+A route that only redirects needs no `source`: `target: "/?uid=urn:example:{query.refid}"` sends every request it sees to `/` with the client's `refid` as `uid`. The parameter must be present, and a repeated one must repeat the same value each time; otherwise the request is answered `400`, since there is no single value to redirect with. The value is encoded for the part of the URL it lands in, like a capture group, and like one it may not appear in the scheme or host of an absolute `target`.
+
+The capture groups are filled in from the client's request path, so the computed location is checked before it is sent. A path `target` (`/new/$1`) must produce a path: a location starting with `//`, `/\`, `\`, a scheme or whitespace is refused with `400`, because a browser would leave the site for it (`/go//evil.example` would otherwise redirect to `//evil.example`). An absolute `target` must have the form `http://host...`, `https://host...` or `//host...` with a non-empty host; any other scheme (`javascript:`, `data:`, even written with `//`), a scheme without `//`, and leading or trailing whitespace are rejected at startup. It must spell out its scheme and host literally, with any capture group only after the host's `/`, `?` or `#`; a capture group in the scheme or host is rejected at startup, since it would let any request choose where it is sent.
+
+Captured text is decoded request data, so it is percent-encoded before it is placed in the location, for the part of the URL it lands in: before the target's first literal `?` or `#` it is encoded as a path (like `RewritePath`), after it as a single query or fragment value, which also encodes `&`, `=`, `+` and `;`. A client can therefore not add a query, fragment or parameter to the location: with `target: /new/$1`, a request for `/old/a%3Fadmin=true` redirects to `/new/a%3Fadmin=true`, not `/new/a?admin=true`. The part of the path that `source` does not match is carried over (as `replaceFirst` does) and encoded the same way. Write `target` itself in encoded form; it is sent as written.
+
+---
+
+### Security & Validation
+
+The `RequireMatch*` filters follow the same regex and repeated-value rules as the predicates (see [Predicates](#5-predicates)): the whole value must match, and so must every occurrence.
+
+#### RequireRequestHeader
+
+Validates an HTTP header is present. Short-circuits the request if the header is missing.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the required header. |
+| `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
+
+#### RequireMatchRequestHeader
+
+Validates an HTTP header is present and its value matches a specified regular expression.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the required header. |
+| `regexp` | String | Yes | The regex pattern the header value must match. |
+| `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
+
+#### RequireQueryParameter
+
+Validates a specific query parameter is present in the request URL.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the required query parameter. |
+| `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
+
+#### RequireMatchQueryParameter
+
+Validates a query parameter is present and its value matches a specified regular expression.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the required query parameter. |
+| `regexp` | String | Yes | The regex pattern the parameter value must match. |
+| `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
+
+#### RequireCookie
+
+Validates a specific cookie is present in the request.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the required cookie. |
+| `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
+
+#### RequireMatchCookie
+
+Validates a cookie is present and its value matches a specified regular expression.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | String | Yes | The exact name of the required cookie. |
+| `regexp` | String | Yes | The regex pattern the cookie value must match. |
+| `reject_status_code` | Integer | No | The HTTP status code to return if validation fails. Defaults to `400`. |
+
+#### BasicAuth
+
+Verifies HTTP Basic Authentication credentials against a list of bcrypt hashes, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate` challenge when they are missing or wrong. On success the caller's [identity](journaling.md#the-callers-identity) is journaled in plain text, with scheme `basic` and the username as subject.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `users` | List | Yes | Entries in htpasswd format, `username:bcrypt-hash`; see the cost advice below. |
+| `realm` | String | No | The authentication realm presented to the client. Defaults to `Secure Area`. |
+| `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
+
+Only bcrypt hashes are accepted (`$2a$`, `$2b$`, `$2x$` or `$2y$`, cost 4-31); htpasswd's MD5, SHA-1 and crypt formats are rejected at startup, as are duplicate usernames and malformed entries.
+
+A request carrying more than one `Authorization` value is refused with `401`: the field is a singleton, and only one value could be verified.
+
+bcrypt is deliberately expensive, so the number of verifications running at once is capped at the number of CPU cores, shared by every `BasicAuth` filter. A request that cannot get a slot within 250 ms is answered with `503 Service Unavailable` and `Retry-After: 1`. Credentials that already verified are cached and skip bcrypt, so a flood of wrong passwords sheds its own requests rather than starving the gateway. The listener is plaintext HTTP, so Basic credentials are visible to anyone on the network path between client and gateway: use this filter only on a trusted network segment.
+
+```yaml
+filters:
+  - BasicAuth:
+      realm: "Admin API"
+      users:
+        - "alice:$2y$12$agcM9nDVmZGTJPT.ldejs.zoYitvQGSKw4FIG2Bt9bpsYf89eaeLG"
+        - "bob:${BOB_HTPASSWD_ENTRY}"
+```
+
+**Password guessing.** `BasicAuth` has no lockout, per user or per client: the bcrypt cost slows each guess down, and the concurrency cap keeps guessing from starving the gateway, but neither limits how many guesses a client gets over time. On any route reachable by untrusted clients, put a `RateLimiter` before `BasicAuth`, so a client is refused before its guess costs a bcrypt:
+
+```yaml
+filters:
+  - RateLimiter:
+      capacity: 20
+      refill_tokens: 5
+      refill_period: 1m
+  - BasicAuth:
+      users:
+        - "alice:${ALICE_HTPASSWD_ENTRY}"
+journal:
+  on_response:
+    - id: failed-logins     # every failed login is journaled, even when nothing else is
+      match:
+        - Status:
+            include: [401]
+      request: { level: METADATA }
+```
+
+The limiter keys on the client address (an IPv6 /64 by default), so it slows a single source; a guessing campaign spread over many addresses needs limits upstream of r7 as well.
+
+Use a bcrypt cost of at least 10; `htpasswd -B` defaults to 5, so generate entries with `htpasswd -nB -C 12 <user>`, which also prompts for the password rather than taking it as an argument, where it would land in shell history and the process list. The accepted range is 4-31, and each step doubles the cost of a verification — and of a guess.
+
+**Failed logins are journaled, not logged.** A refused request is answered with `401` and recorded in the journal with its request ID, client address, and time; the `failed-logins` rule above records it even on a route that otherwise journals nothing, and names itself in `gateway.journal.rule`.
+
+A failed verification is never cached and always costs a full bcrypt, whether the username exists or not, so response time does not reveal which usernames are configured. That holds as long as every user is hashed at the same cost — mixed cost factors are an enumeration oracle in their own right, since a faster reply then identifies a cheaper user.
+
+#### JwtAuth
+
+Verifies a `Bearer` JWT against the signing keys of its issuer, and short-circuits with `401 Unauthorized` and a `WWW-Authenticate: Bearer` challenge when the token is missing or invalid. On success the caller's [identity](journaling.md#the-callers-identity) is journaled in plain text: the issuer, the subject (`sub`) and the username.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `issuer` | String | One of `issuer` or `issuers` | The `iss` a token must carry, for a single issuer. |
+| `jwks_url` | String | With `issuer` | The JWKS endpoint the issuer's signing keys are fetched from, `http` or `https`. |
+| `issuers` | List | One of `issuer` or `issuers` | The issuers whose tokens are accepted, each with its own keys, in place of `issuer` and `jwks_url`. Each entry has an `issuer` and an optional `jwks_url`; see [several issuers](#several-issuers). |
+| `audience` | String | Yes | A value the token's `aud` must contain. |
+| `username_claim` | String | No | The claim journaled as the caller's username. Defaults to `preferred_username`. |
+| `clock_skew_seconds` | Integer | No | Clock skew allowed on `exp` and `nbf`, 0-300. Defaults to `60`. |
+| `jwks_cache_duration` | Duration | No | How long fetched keys are cached, at least `1m`; they are refreshed in the background shortly before they expire. Defaults to `5m`. |
+| `forward_credentials` | Boolean | No | Whether the client's verified `Authorization` header is passed on to the upstream. Defaults to `false`. A header another filter set in its place (such as `InjectBasicAuth`) is always kept. |
+| `forward_claims_as_headers` | Map | No | Claim name to upstream header name. Each listed string claim is set on the upstream request under that header; a value that cannot be a header (a character beyond ISO-8859-1, or a control character) is left out. Every listed header is removed from the client's own request first, in any spelling a backend could read as it (`X_User_Id` as well as `x-user-id`), so a client can never supply one itself. |
+
+```yaml
+filters:
+  - JwtAuth:
+      jwks_url: "https://auth.example.com/realms/tenant-a/protocol/openid-connect/certs"
+      issuer: "https://auth.example.com/realms/tenant-a"
+      audience: "billing"
+      forward_claims_as_headers:
+        sub: X-User-Id
+        preferred_username: X-User-Name
+```
+
+A token must be signed with an asymmetric algorithm (RS, PS or ES, 256 to 512 bits), carry `exp` and `sub`, and have the type `JWT`, `at+jwt` or none. The issuer and `audience` are required because an identity provider signs the tokens of all its clients with the same keys: without an audience, a token issued to any client of the realm would pass. Keycloak adds the client to `aud` only through an audience mapper on the client scope.
+
+A `401` never says why the token was refused. A request carrying more than one `Authorization` value is refused with `401`. When the keys cannot be fetched, the request is answered with `503 Service Unavailable` and `Retry-After: 5`, so an identity provider outage is not mistaken for bad credentials.
+
+##### Several issuers
+
+One route can accept tokens from several issuers, such as one Keycloak with a realm per tenant, where each realm signs with its own keys and has its own `iss`. List every issuer to trust:
+
+```yaml
+filters:
+  - JwtAuth:
+      issuers:
+        - issuer: "https://auth.example.com/realms/tenant-a"
+        - issuer: "https://auth.example.com/realms/tenant-b"
+        - issuer: "https://login.example.org/oauth2"
+          jwks_url: "https://login.example.org/oauth2/keys"
+      audience: "billing"
+      forward_claims_as_headers:
+        iss: X-User-Issuer
+        sub: X-User-Id
+```
+
+* **Only listed issuers are trusted.** A token's `iss` must equal one of them exactly, and it is checked before any key is looked up: a token from any other issuer is refused with `401` and causes no network call. There is no prefix or wildcard form on purpose. Every realm of a Keycloak can mint tokens with any username and audience, so trusting the host would trust a test realm, or one an administrator created by mistake, as much as the tenants'.
+* **Each issuer has its own keys.** A token is verified only with the keys of the issuer it names, so one issuer's key can never vouch for another's token. An entry without `jwks_url` fetches its keys from the issuer followed by `/protocol/openid-connect/certs`, where Keycloak publishes a realm's keys; any other identity provider takes `jwks_url`.
+* **Each issuer's keys are cached on their own**, for `jwks_cache_duration` and refreshed in the background. When one issuer's keys cannot be fetched, only that issuer's tokens get `503`; the others are unaffected.
+* **Key upstream users on the issuer and the subject.** `sub` is unique only within its issuer, and a username even less so: two tenants can both have an `alice`. Forward `iss` beside `sub`, as above, so the upstream never mistakes one tenant's user for another's. The journal records the issuer with every identity.
+
+`issuers` replaces `issuer` and `jwks_url`; setting both forms is refused. So are an empty list, an issuer listed twice, a malformed `jwks_url`, and an entry without `jwks_url` whose issuer is not an `http` or `https` URL to derive it from.
+
+#### InjectBasicAuth
+
+Generates a Base64 encoded Basic Authentication string and injects it into the `Authorization` header of the upstream request.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `username` | String | Yes | The authentication username. |
+| `password` | String | Yes | The authentication password. |
+
+#### RequestSizeLimit
+
+Limits the size of request bodies.
+
+* **Declared length** (`Content-Length`): a request declaring more than `max_size` is refused with `413 Payload Too Large` before anything is sent upstream; a malformed or negative length is refused with `400`.
+* **Undeclared length** (chunked, or HTTP/2 without `Content-Length`): the body is counted as it streams. Once it crosses `max_size`, r7 closes both the client connection and the upstream connection mid-body, so the upstream never receives the request as complete. The response headers may already have been impossible to send, so the client sees the connection close rather than a `413`.
+
+The server-wide `limits.max_entity_size` applies on top of this and cannot be raised by it.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `max_size` | Size | Yes | The maximum allowed request size formatted with a size suffix (e.g., `10MB`, `500KB`). |
+
+#### Cors
+
+Handles Cross-Origin Resource Sharing (CORS). Answers CORS preflights (`OPTIONS` carrying both `Origin` and `Access-Control-Request-Method`) with `204 No Content`, and decorates other responses with the appropriate Access-Control headers. Any other `OPTIONS` request is passed to the upstream.
+
+* A preflight from an origin that is not allowed gets `204` with no Access-Control headers at all, so it learns nothing about the policy.
+* When `allowed_origins` is a list rather than `*`, every response carries `Vary: Origin` (added to any existing `Vary`), so a shared cache never serves one origin's answer to another.
+* The filter's policy is authoritative: if the upstream sends `Access-Control-Allow-Origin` or `Access-Control-Allow-Credentials` for an origin the filter does not allow, they are removed, and with `allow_credentials` off an upstream `Access-Control-Allow-Credentials` is removed for allowed origins too.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `allowed_origins` | String | Yes | Comma-separated list of permitted origins, or `*` to allow any origin. |
+| `allowed_methods` | String | No | Value mapped to `Access-Control-Allow-Methods`. |
+| `allowed_headers` | String | No | Value mapped to `Access-Control-Allow-Headers`. |
+| `max_age` | String | No | Value mapped to `Access-Control-Max-Age`. |
+| `allow_credentials` | Boolean | No | If `true`, sets `Access-Control-Allow-Credentials` to `true`. |
+
+---
+
+### Traffic Shaping & Reliability
+
+#### RateLimiter
+
+Provides token-bucket rate limiting. Requests exceeding the limit are rejected with `429 Too Many Requests`. Automatically injects `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers. **Buckets are keyed by the client's resolved address** (see [`trusted_proxies`](#limits-configuration-limits)): an IPv4 address as is, an IPv6 address by its leading `ipv6_prefix_length` bits (a `/64` by default). A filter that sets the `rate_limit_key` attachment overrides this.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `capacity` | Long | Yes | Maximum number of tokens the bucket can hold. |
+| `refill_tokens` | Long | Yes | Number of tokens added to the bucket per refill period. |
+| `refill_period` | Duration | Yes | The time interval (e.g., `2s`) for the token refill. |
+| `max_buckets` | Long | No | Maximum number of unique identities/buckets to track. Defaults to `10000`. |
+| `max_bucket_ttl` | Duration | No | Time-to-live for idle buckets. Defaults to the time a fully-drained bucket needs to refill to `capacity` (`ceil(capacity / refill_tokens) * refill_period`), floored at `30s`. A shorter TTL would evict an idle client's bucket before it could refill, handing it a fresh full bucket - effectively resetting its limit - the next time it is seen. |
+| `ipv6_prefix_length` | Integer | No | How many leading bits identify one IPv6 client (1-128). Defaults to `64`: a subscriber is typically assigned a whole `/64` and can use any address in it, so limiting per full address would give one client unlimited buckets. IPv4 clients are keyed by their full address. |
+
+#### CircuitBreaker
+
+Judges what the **upstream** did for each exchange, once it is complete, and temporarily blocks routing **for the entire route** when `failure_threshold` failures in a row are reached. Fast-fails with `503 Service Unavailable` while open, and allows a single probe request through during half-open state. It is declared on a route, never at the root or on a group (see [Root, Groups and Routes](#root-groups-and-routes)).
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `failure_threshold` | Integer | Yes | The number of consecutive failures required to trip the circuit open. |
+| `cooldown_period` | Duration | Yes | The time to wait (e.g., `12s`) before transitioning to a half-open state to probe upstream health. |
+| `slow_call` | Duration | No | An upstream that takes longer than this to start its response (measured from when r7 began proxying) counts as a failure, whatever its status. Must be greater than zero. |
+
+A **failure** is an upstream `5xx`, no response at all (refused, reset, timed out), a response body that broke off, an answer slower than `slow_call`, or a request that fell back to another route. A **success** is any other upstream answer. **Neither** counts for or against, and leaves the failure count as it is: a request r7 answered itself without asking the upstream (a `ReturnResponse` `5xx`, a request another filter refused), or a client that disconnected. A half-open probe that proves nothing returns the circuit to open.
+
+---
+
+### Short-Circuiting & Overrides
+
+#### ReturnResponse
+
+Short-circuits the routing pipeline, halting execution and immediately returning a mock or static response to the client. The response defaults to `text/plain; charset=utf-8` unless a `SetResponseHeader` is used alongside it to define `Content-Type`. *(Note: Deferred response filters declared after `ReturnResponse` in the configuration still execute against this generated response).*
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `status` | Integer | Yes | The HTTP status code to return (e.g., `200`, `418`). |
+| `body` | String | Yes | The plain text or JSON payload to return in the response body. |
+
+#### StaticContent
+
+Short-circuits the pipeline to serve static files directly from the disk. **Security:** Path traversal attempts (`../`) are automatically rejected. Only `GET` and `HEAD` are served (anything else is `405`), and static content sets `X-Content-Type-Options: nosniff` on every answer before response filters run. A directory is served by its welcome file (`index.html`, `index.htm`, `default.html` or `default.htm`) and is otherwise answered `403 Forbidden`; there are no directory listings. A file or folder the gateway's user may not read is also `403`, and r7 logs a warning naming the path once per directory; the images run as uid `65532`, so a bind-mounted folder must be readable by that user (`chmod -R a+rX`). A directory addressed without its trailing slash is redirected to the path the client sent plus `/`, whatever filters such as `StripPathPrefix` did to the path. Files carry `Last-Modified` and an `ETag`, answer conditional requests with `304`, and serve a single byte `Range`. Response filters on the route see that status (`304`, `404`, `206`) and have the last word on its headers, including the ability to replace or remove `X-Content-Type-Options`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `directories` | List of Strings | Yes | The directories to serve from, in order (e.g. `[/var/www/html/]`). Each must exist when the routes load. |
+| `follow_symlinks` | Boolean | No (default `false`) | Follow symbolic links found under a directory. The directory itself may be a symlink either way (e.g. an atomically swapped `current` release symlink); this is only needed for links inside it. |
+| `serve_hidden_files` | Boolean | No (default `false`) | Serve files and directories whose name starts with `.` (e.g. `.env`, `.git/`, `.htpasswd`). When disabled, such a request is answered `404 Not Found`; `.well-known/` is always served. |
+| `fallback` | String | No | A file path relative to the directories, such as `index.html` (no leading `/`), served with `200` for a path none of them has, instead of `404`. It is looked up in the directories' order and must exist in one when the routes load. |
+
+With several directories, each request is answered by the first one that can: the first holding the file, or, for a directory asked for with its trailing slash, the first holding a welcome file in it. A higher directory overrides a lower one file by file, so a deployment can override a few files of a shared set without copying the rest:
+
+```yaml
+routes:
+  - id: assets
+    match:
+      - PathPrefix:
+          prefix: /assets/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          directories: [/srv/site/assets/, /srv/common/assets/]
+```
+
+Nothing is merged: a file is served whole from one directory. A directory that is missing at runtime, mid swap or on an unmounted volume, is skipped; when all are, the answer is `404`. To serve several folders, give each its own route.
+
+A single-page app handles its routes in the browser, so a path such as `/orders/42` has no file behind it. With `fallback: index.html` such a path gets the app's `index.html` with `200`, as nginx's `try_files $uri /index.html` does. Every path no directory has gets it, a missing `app.js` included; hidden files are still `404`, and a directory without a welcome file is still `403`.
+
+In a container, bind-mount the parent of each directory, not the directory itself. A mount holds on to the directory it was given, so replacing that directory on the host leaves the container on the deleted one; r7 logs a warning and skips it until it restarts, and answers `503` when no other directory is left. With the parent mounted, a replaced directory, or a swapped `current` symlink, is picked up on the next request.
+
+#### SetStatus
+
+Overrides the HTTP response status code returned to the client, regardless of the upstream target's actual response.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `status` | Integer | Yes | The valid HTTP status code (100-599) to enforce on the response. |
+
+---
+
+## 7. Journaling & Storage
+
+Request/response journaling is executed asynchronously to avoid blocking the hot path.
+
+### Storage Configuration (`server.yaml -> storage`)
+
+Where and how journals are written on disk is set in `server.yaml`; see [Storage & Journaling](#storage-journaling-storage).
+
+### Logging Levels (`routes.yaml -> journal`)
+
+Each direction, `request` and `response`, has a level. `journal` is declared at the root, on a group and on a route; each direction's level is taken from the innermost of them that names it, and a direction nothing names is `NONE`.
+
+| Level | Captured Data | Notes |
+| --- | --- | --- |
+| `NONE` | None | Disables logging completely for the route/status. |
+| `METADATA` | URI, Method, Status, Timing, IP | Highly performant, minimal storage footprint. |
+| `HEADERS` | Metadata + Headers | Captures both request and response headers. |
+| `FULL` | Headers + Bodies | Captures bodies as they stream: whole, or their first `truncate_body_at` bytes (below). |
+
+Header and query parameter values that may be secrets are journaled as fingerprints, not in plain text; see [Journaling: redacted values](journaling.md#redacted-header-and-query-parameter-values).
+
+A request at `NONE` is still recorded at `METADATA` (start line, client address, timing) when its response is journaled, to anchor the response.
+
+A route whose base levels and every rule it can reach are `NONE` is *silent*, decided when the configuration loads: its exchanges skip the journal entirely, with no rules evaluated and nothing built for it.
+
+#### Body cap (`truncate_body_at`)
+
+A direction also takes `truncate_body_at`, a size (`64KB`, `1MB`). At `FULL` the journal keeps the body's first `truncate_body_at` bytes and records that it stopped; the body itself still streams whole to the upstream or the client, and the exchange is journaled whatever its size. Below `FULL` it has no effect. Without it, whole bodies are journaled; [Journaling: capping bodies](journaling.md#capping-bodies) says when to set it.
+
+```yaml
+journal:
+  request:  { level: METADATA, truncate_body_at: 64KB }
+  response: { level: METADATA, truncate_body_at: 64KB }
+  on_request:
+    - id: writes
+      match:
+        - not:
+            Method: { include: [GET] }
+      request: { level: FULL }               # captured up to 64KB
+```
+
+`level` and `truncate_body_at` are inherited separately: `response: { truncate_body_at: 8KB }` on a route replaces the cap and keeps the inherited level, and a cap set at the root is the default for every `FULL` beneath it, including one a rule sets. A rule that names `truncate_body_at` replaces it, with a larger or a smaller size.
+
+### Journal Rules (`on_request`, `on_response`)
+
+The levels an exchange deserves depend on what happens to it: a failed login or a `5xx` is worth more than the thousandth `200`. Rules raise or lower the levels for the exchanges their `match` selects:
+
+```yaml
+journal:
+  request:
+    level: METADATA
+  response:
+    level: METADATA
+  on_request:
+    - id: debug-traffic
+      match:
+        - HasRequestHeader:
+            name: X-Debug
+      request: { level: HEADERS }
+  on_response:
+    - id: server-errors
+      match:
+        - Status:
+            include: [5xx]
+      response: { level: FULL }
+    - id: teapots
+      match:
+        - Status:
+            include: [418]
+      request: { level: NONE }
+      response: { level: NONE }
+```
+
+* **When they run.** `on_request` is checked once the route is chosen, before its filters, against the request as the client sent it. `on_response` is checked once the response head is final, proxied or answered by r7, before a byte of it is written, and may use [response predicates](#response-matching). In both lists a request predicate tests the request as the client sent it, so a `RewritePath` or `SetRequestHeader` never changes what a rule matches.
+* **Which rule wins.** For each key of each direction (`level`, `truncate_body_at`), the first matching rule that names it wins; a rule naming only `response` leaves the request to the rules after it, and one naming only a direction's `truncate_body_at` leaves its `level` to them. `on_response` overrides what `on_request` resolved. A route's rules are checked first, then its group's, then the root's.
+* **Recorded.** Each rule that fires is journaled in the `gateway.journal.rule` attribute, by its `id`, or its path (`routes.orders.journal.on_response[0]`) when it has none. Ids are unique across the file.
+* **Failures.** A rule whose predicate fails (a regex over its budget) does not fire, under `not` as well, and the exchange carries on: its label is journaled in `gateway.journal.rule_error`. A failing rule is often one meant to raise the level, so its failures are also counted when the exchange ends at `NONE` and leaves no record: the management view and the dashboard show a `rule_errors` count beside each rule, by its id or path. The first failure of each rule after a load is logged as a warning, with the rule's path and the exception; later ones are only counted.
+
+Bodies stream as they pass, which fixes two things at load:
+
+| Rule | Refused with |
+| --- | --- |
+| `on_response` sets `request: FULL` | `[routes.orders.journal.on_response[0].request] FULL cannot be set in on_response: the request body has already streamed. Set it in on_request or as the base level.` |
+| `on_response` names `request` while the base or an `on_request` rule can make it `FULL` | `[routes.orders.journal.on_response[0].request] cannot change the request level: journal.on_request[0] can make it FULL, and a request body that was journaled cannot be un-written.` |
+| `on_response` names `request.truncate_body_at` | `[routes.orders.journal.on_response[0].request.truncate_body_at] the request body has already streamed; set it in on_request or as the base.` |
+| A rule without `match` | `[routes.orders.journal.on_request[0]] match is required` |
+| A rule with `match: []` | `[routes.orders.journal.on_request[0].match] Empty list: name at least one predicate, or remove it` |
+| A rule naming neither direction | `[routes.orders.journal.on_request[0]] sets no level; name request, response or both` |
+| Two rules with one `id` | `[routes.orders.journal.on_request[1].id] 'debug-traffic' is already the id of journal.on_request[0]` |
+
+The response body is captured from its first byte whatever level and cap `on_response` gives it, since the rules run before it is written.
+
+### Unrouted Requests (`routes.yaml -> unrouted`)
+
+Some requests are refused before any route is chosen, so no route's journal settings apply to them:
+
+| Reason (`gateway.unrouted.reason`) | Status | Cause |
+| --- | --- | --- |
+| `no_route` | `404` | No route matched. |
+| `ambiguous_path` | `400` | See [Ambiguous Paths](#ambiguous-paths). |
+| `transfer_encoding` | `400` | See [Transfer-Encoding](#transfer-encoding). |
+| `trace` | `501` | TRACE is never forwarded. |
+| `regex_budget` | `500` | A route predicate's pattern exhausted its regex budget. |
+
+By default these leave no journal entry. They are mostly what scanners and probes send, so they are worth recording where an audit trail matters. The top-level `unrouted` section journals them under the route ID `<unrouted>`, with the reason in the `gateway.unrouted.reason` attribute. The ID is reserved: a configured route may not use it.
+
+```yaml
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+```
+
+Levels work as for a route, except that `FULL` is refused at startup, and so is `truncate_body_at`: a refused request's body is never read, and after a bad `Transfer-Encoding` its boundaries are not known. The root's `journal` does not apply here: refusals are mostly scanner traffic, and levels chosen for real routes would journal it by accident. The dashboard's system view shows the unrouted journal on its own. Either direction may be left out. Leaving out the response journals nothing for it. Leaving out the request does not quite mean nothing: when the response is journaled, the request is recorded at `METADATA` to anchor it, as for any route. A scanner can produce many of these requests, so pick levels with the journal's retention in mind.
+
+#### Rules for refusals
+
+`on_request` rules work as for a route and are checked on every refusal. One predicate exists only here: `UnroutedReason` matches the refusal's reason, from the table above. Like `Sample`, it has no `leg`, and anywhere else it is refused at startup.
+
+```yaml
+unrouted:
+  journal:
+    request:  { level: HEADERS }         # every refusal
+    response: { level: METADATA }
+    on_request:
+      - id: api-misses                   # first match wins: shields these from the next rule
+        match:                           # reads the request: checked on no_route only
+          - Host: { hosts: [api.example.com] }
+        request:  { level: HEADERS }
+        response: { level: METADATA }
+      - id: skip-other-misses
+        match:
+          - UnroutedReason: { include: [no_route] }
+        request:  { level: NONE }
+        response: { level: NONE }
+```
+
+A `404` on `api.example.com` journals its request headers, so a client calling a removed route can be found. Other misses, mostly scanners, are not journaled. `TRACE`, `/%2e%2e/` and smuggling attempts are journaled at `HEADERS`.
+
+A rule that contains any other predicate, anywhere in its `match`, reads the request, and is **checked only on `no_route`**. On the other four refusals it is skipped, as if it did not match. A miss is the one refusal whose request passed every guard routing relies on: an unambiguous path, valid framing, an allowed method. The other four happen before r7 interprets the request. The whole rule is skipped, not each predicate: otherwise `not: { Host: ... }`, written for misses, would also match a smuggling attempt and could set it to `NONE`. A rule made only of `UnroutedReason` and `Sample` is checked on every refusal.
+
+`on_response` is refused: r7's answer to a refused request is fixed by its reason, so there is nothing left to decide.
+
+---
+
+## 8. Complete Example Configuration
+
+The following example demonstrates a standard r7 configuration, showcasing path routing, method restrictions, filter application, static serving, conditional journaling, journaling of unrouted requests, resilient fallback routing, and active health checks.
+
+```yaml title="routes.yaml"
+version: '{{git.rev.abbr}}'
+
+# Filters applied to all routes, one instance each for the gateway
+filters:
+  - SimpleMetrics
+  - AddCorrelationId
+
+# Journal requests refused before routing: route misses, ambiguous paths, TRACE
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+
+routes:
+  # Internal health loopback (Short-circuiting proxy)
+  - id: internal-health-proxy
+    match:
+      - Path:
+          path: /_internal/health
+    filters:
+      - RewritePath:
+          regexp: "^/_internal/health$"
+          replacement: "/health"
+    upstream:
+      targets:
+        - url: "http://127.0.0.1:18888"
+
+  # Static content handoff (Short-circuits upstream phase)
+  - id: static-web-assets
+    match:
+      - PathPrefix:
+          prefix: /assets/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - SetResponseHeader:
+          name: X-Content-Type-Options
+          value: nosniff
+      - StaticContent:
+          directories: [/var/www/html/]
+
+  # Complex routing with nested logical predicates
+  - id: protected-admin-api
+    match:
+      - and:
+          - PathPrefix:
+              prefix: /api/admin
+          - or:
+              - RemoteAddr:
+                  source: 10.0.0.0/8
+              - HasRequestHeader:
+                  name: X-Internal-VPN
+          - not:
+              MatchQueryParameter:
+                name: debug
+                regexp: "true|1"
+    upstream:
+      strategy: ROUND_ROBIN
+      health_check:
+        interval: 5s
+        rise: 2
+        fall: 3
+        path: /system/health
+      timeouts:
+        read: 15s
+      fallback:
+        route_id: fallback-stub
+      targets:
+        - url: https://admin-1.internal
+        - url: https://admin-2.internal
+    filters:
+      - RateLimiter:
+          capacity: 100
+          refill_tokens: 10
+          refill_period: 1s
+      - CircuitBreaker:
+          failure_threshold: 5
+          cooldown_period: 30s
+    journal:
+      request:
+        level: METADATA
+      response:
+        level: METADATA
+      on_response:
+        - match:
+            - Status:
+                include: [5xx, 401, 403]
+          request: { level: HEADERS }
+
+  - id: fallback-stub
+    match: [] # Empty match blocks are never hit naturally; used only via fallback
+    filters:
+      - ReturnResponse:
+          status: 503
+          body: '{"error": "Admin services currently offline"}'
+      - SetResponseHeader:
+          name: Content-Type
+          value: application/json
+
+```
+
+---
+
+## 9. Server Configuration
+
+The `server.yaml` file controls the foundational infrastructure of the r7 gateway. This includes network binding, HTTP limits, upstream connection pooling, and disk-backed storage configurations for journaling.
+
+`server.yaml` is optional, but a fingerprint key is not: without the file, set the `R7_FINGERPRINT_KEY` environment variable (see [`fingerprint_key`](#journal-redaction-storagejournal_security)). Without the file, r7 runs on the defaults in the tables below: the gateway listens on `0.0.0.0:8888`, the management endpoint on `127.0.0.1:18888`, journals go to `./journals` (or `R7_JOURNAL_DIR`), and `X-Forwarded-For` is never trusted. The startup log says when the defaults are in use. Add a `server.yaml` only for the settings you need to change; anything it leaves out keeps its default.
+
+r7 reads `routes.yaml` and `server.yaml` from the directory you start it in; `R7_ROUTES_CONFIG` and `R7_SERVER_CONFIG` name other paths. The container images start in `/app/config`, so mount your files there. `routes.yaml` is required, and r7 refuses to start without it. A `server.yaml` named by `R7_SERVER_CONFIG` must exist too: r7 will not fall back to the defaults when the file you pointed it at is missing, since that would quietly drop your limits and trusted proxies.
+
+### Checking a configuration before it ships
+
+A `routes.yaml` rendered in CI is proven only by the loader that will run it: a JSON Schema cannot see a duplicate route id, a fallback loop or a filter's cross-field rules. `--validate-only` loads `routes.yaml` and `server.yaml` as a start does, from the same paths, with the same `${VAR}` interpolation and checks, and builds every route, filter and predicate. Then it exits, without binding a port, creating the journal directory or contacting an upstream:
+
+```bash
+java -jar r7-helidon-1.0-SNAPSHOT.jar --validate-only
+```
+
+```bash
+docker run --rm --env-file .env \
+  -v "$PWD/routes.yaml:/app/config/routes.yaml:ro" \
+  ghcr.io/ethlo/r7-gateway:main --validate-only
+```
+
+A valid configuration prints one line on stdout and exits `0`:
+
+```text
+routes.yaml OK, with the built-in server defaults (no server.yaml)
+```
+
+An invalid one prints the errors startup would, prefixed with the file, on stderr and exits `1`:
+
+```text
+routes.yaml: [routes.api] id is not unique
+```
+
+Any other argument exits `2`. Extension jars in the plugins directory (`plugins/` in the working directory, `R7_PLUGINS_DIR` to change it, `/app/plugins` in the image) are loaded as at startup, so mount them for the check too, or their filters are reported as unknown. The check reads the environment as startup does: every `${VAR}` without a default must be set, and so must `R7_FINGERPRINT_KEY` when there is no `server.yaml`. A CI job without production secrets sets placeholders; the check verifies their form, not their value.
+
+### Server Configuration (`server`)
+
+Defines the gateway's listening interface and port, and how many connections it holds.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `host` | String | The IP address or interface the primary gateway binds to (e.g., `0.0.0.0` for all interfaces). |
+| `port` | Integer | The primary port the gateway listens on for incoming traffic. |
+| `max_connections` | Integer | When this many client connections are open, the gateway stops accepting new ones; they wait in the accept backlog. Defaults to `20000`. Keep it below the process's open-file limit, less what upstream connections and journals need. |
+| `idle_timeout` | Duration | Closes a connection that sits between requests for this long, and a WebSocket that carries nothing either way for this long - a client that keeps a quiet WebSocket open must ping more often. Defaults to `30s`; at most `24d`. |
+| `backlog` | Integer | Length of the kernel's accept backlog. Defaults to `1000`. |
+
+None of the three can be turned off: a listener without them lets a client hold file descriptors until the gateway stops accepting traffic.
+
+Each connection runs on a virtual thread of its own, and so does every request on it: a filter that blocks (`BasicAuth`'s bcrypt, a lookup) parks its thread and holds up nothing else.
+
+### Management Configuration (`management`)
+
+Defines the interfaces for the internal status and metrics endpoints.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `host` | String | The interface for the internal management server. Defaults to `127.0.0.1`, or to the `R7_MANAGEMENT_HOST` environment variable when set; the container images set it to `0.0.0.0` so the published status port works. The endpoint has no authentication: publish it only on a private network. |
+| `port` | Integer | The port for the internal management server. |
+| `request_parse_timeout` | Duration | Time allowed to receive a complete request head. Defaults to `2s`. |
+| `idle_timeout` | Duration | Closes a connection that sits between requests for this long. Defaults to `30s`. |
+| `max_connections` | Integer | Connections the management port accepts at once; more wait in the accept backlog until one closes. Defaults to `64`. |
+| `allowed_hosts` | List of Strings | Host names, besides `localhost` and `host`, that a request's `Host` header may name. Empty by default. |
+
+The management listener shares the process's file descriptors with the gateway itself, so none of its timeouts can be turned off (each must be positive and at most `24d`) and its connections are capped: without these, a client that opens connections and sends part of a request on each could use up descriptors until the gateway stops accepting traffic.
+
+A request whose `Host` names anything other than `localhost`, the configured `host`, an entry in `allowed_hosts` or an IP address gets `421`. This stops DNS rebinding, where a web page re-resolves its own name to `127.0.0.1` and so reads a loopback-only dashboard from the browser of someone on the gateway host. IP addresses are always accepted because rebinding needs a name. If you reach the management port through a DNS name, add that name to `allowed_hosts`.
+
+To reach the management port from another machine, put it behind something that authenticates. Do not route a path on the gateway port to it: that would publish it to every client of the gateway.
+
+The management endpoint is read-only (`GET`/`HEAD`; anything else gets `405`) and sends `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` that allows only the dashboard's own script (by hash) and requests back to the same origin. Route configuration shown there has sensitive values replaced with `******`: `InjectBasicAuth` passwords, `BasicAuth` user hashes, request and response cookie values and query parameter values set by filters, credentials embedded in upstream target URLs (`http://user:pass@host`), request and response header values set by filters unless the header is one the journal records as safe in that direction (see `journal_security`), and the patterns of `RequireMatch*` filters. Summaries of filters and predicates mask the same values, and the values predicates compare against, the same way.
+
+What the dashboard shows beyond the configuration itself:
+
+* **Response time** per route as p50/p95/p99 over the `SimpleMetrics` window (`period`, default 2 minutes), alongside the lifetime average. Percentiles come from a fixed histogram with four buckets per power of two and are reported as the bucket's upper bound, so they read at most 25% high; the window starts empty after a restart.
+* **Reload status** of `routes.yaml`: when the running routes were loaded, and when the most recent edit was rejected. A rejected edit leaves the previous routes running; the dashboard says so but not why, since validation messages can quote configured values - the reason is in the gateway log.
+* **Upstream target health** for routes with a `health_check`, from the moment routes are loaded (see [Health Check](#health-check-health_check)); a hot reload resets it.
+* **Requests no route matched**, which are answered `404` and are not part of any route's figures.
+* **`server.yaml` as in effect**, with every value that differs from the built-in default marked.
+* **Gateway health** in the header: the worst status any component reports, with each component that is not `OK` listed under it and linked to its route. This is the roll-up `/health` and `/ready` carry. The header shows `STALE` once the data has stopped changing for 10 seconds.
+* **Component status**: what a route's filters and its upstream report about themselves, as `OK`, `WARN` or `ERROR`. A route with a component in `WARN` or `ERROR` says so in the route list, and the route's page shows each filter's status with its detail and values. `CircuitBreaker` is `ERROR` while open and `WARN` while half-open; `RateLimiter` is `WARN` once it tracks `max_buckets` clients, since it then evicts buckets early and the limit holds less tightly; a health-checked upstream is `WARN` while some of its targets are down and `ERROR` while all are. A custom filter can report its own (see [Reporting a filter's status](extensibility.md#reporting-a-filters-status)).
+
+#### Paths
+
+| Path | Answers |
+| --- | --- |
+| `/metrics` | Prometheus metrics, in the text format (`text/plain; version=0.0.4`). |
+| `/health` | `200` with the gateway's health (below), or `503` with `{"status":"DOWN"}` once the status snapshot is more than 10 seconds old. For liveness probes. |
+| `/ready` | The same, and also `503` while the gateway's health is `ERROR`. For load balancers that should stop sending traffic to a gateway with a broken component. |
+| any other | The dashboard, or with `Accept: application/json` the data behind it. |
+
+The JSON and the metrics are rendered together every 2 seconds and served as rendered, so any number of dashboards and scrapers cost the gateway the same, and the two always agree. `rendered_at` in the JSON says when its data was read. The snapshot is rendered on the scheduler that also runs health checks and reloads `routes.yaml`, which is why a stale one fails `/health`: the gateway's housekeeping has stopped. `/health` does not turn `DOWN` for an open circuit breaker or a down upstream; those are the gateway doing its job, and restarting it would not help.
+
+While the snapshot is fresh, both paths answer with the gateway's health, so one request shows its state:
+
+```json
+{"status":"UP","health":"ERROR","problems":[
+  {"route":"orders","component":"CircuitBreaker","position":2,"health":"ERROR","detail":"Open since 2026-10-08T10:40:12Z"},
+  {"route":null,"component":"routes.yaml","position":null,"health":"WARN","detail":"Rejected at 2026-10-08T10:41:03Z: the previous routes still run; the reason is in the gateway log"}]}
+```
+
+`health` is the worst any filter or upstream reports (see Component status above). A rejected `routes.yaml` and a journal disk with less free space than two more segments per shard (2 × `shard_count` × `shard_size`; component `journal`) each count as `WARN`. A journal shard that stopped, because its disk filled or its mapping failed, counts as `ERROR` (component `journal`) until the gateway restarts: the shard refuses every later entry, so the requests it would journal fail closed. `problems` lists each that is not `OK`; `route` is the group's id for a group's filter, and null for a root filter, for `routes.yaml` and for `journal`. Use `/ready` as a readiness probe only where its replicas do not share the failing component: when every replica's upstream is down, every replica turns `503` together and the load balancer has nowhere left to send traffic.
+
+#### Metrics
+
+| Metric | Type | Labels | What it counts |
+| --- | --- | --- | --- |
+| `r7_info` | gauge | `version` | Always `1`; carries the running version. |
+| `r7_start_time_seconds` | gauge | | When the process started, in seconds since the epoch. |
+| `r7_gateway_health` | gauge | | The gateway's health, as `/health` reports it: `0` OK, `1` WARN, `2` ERROR. The one series to alert on. |
+| `r7_routes_config_rejected` | gauge | | `1` while the latest edit of `routes.yaml` was rejected and the previous routes still run. |
+| `r7_unrouted_requests_total` | counter | | Requests no route matched. |
+| `r7_connections_active` | gauge | | Open client connections to the gateway port. |
+| `r7_journal_available_bytes` | gauge | | Free space for journals in `work_dir`. |
+| `r7_journal_bytes_total` | counter | `shard` | Bytes the journal placed in its segments, after compression. |
+| `r7_route_requests_total` | counter | `route`, `code` | Responses sent to clients. |
+| `r7_route_upstream_responses_total` | counter | `route`, `code` | Responses received from upstreams. A proxied request no upstream answered is not counted here; its `502`, `503` or `504` is r7's, in `r7_route_requests_total`. |
+| `r7_route_active_requests` | gauge | `route` | Requests in progress. |
+| `r7_route_active_websockets` | gauge | `route` | Open WebSocket tunnels. |
+| `r7_route_journal_plain_bytes_total` | counter | `route` | Bytes journaled, before compression. A compressed batch mixes routes, so what each route takes on disk is not known; `r7_journal_bytes_total` counts that per shard. |
+| `r7_route_request_duration_seconds` | histogram | `route` | Time from request to response. Bucket bounds are powers of two from 256µs to about 16.8s. |
+| `r7_component_health` | gauge | `route`, `component`, `position` | A filter's or upstream's status: `0` OK, `1` WARN, `2` ERROR. |
+| `r7_component_value` | gauge | `route`, `component`, `position`, `name` | A number a filter or upstream reports, such as a circuit breaker's `rejected_requests`. |
+| `r7_jvm_heap_used_bytes`, `r7_jvm_heap_max_bytes` | gauge | | Heap in use, and its limit. |
+| `r7_jvm_direct_used_bytes` | gauge | | Direct buffer memory in use. |
+| `r7_jvm_gc_seconds_total` | counter | | Time spent in garbage collection. |
+| `r7_process_open_fds`, `r7_process_max_fds` | gauge | | Open file descriptors, and the limit. |
+
+The `route_*` metrics cover routes with the `SimpleMetrics` filter. Their counts, other than the duration histogram, are saved in `work_dir` and carry on across restarts, like the dashboard's. `component` is the filter's name, or `upstream`; `position` is the filter's place in the route's pipeline, root filters first, and `0` for the upstream, so two filters of one kind on a route stay apart. A root filter is one instance in front of every route, so it is reported once, without a `route` label; a group's filter is reported once, with the group's id as `route`.
+
+### HTTP Options (`http`)
+
+Configures the HTTP server layer, including protocol support and request parsing behaviors.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `enable_http2` | Boolean | Enables HTTP/2. Defaults to `false`. The listener is plaintext, so this means h2c (prior knowledge or `Upgrade: h2c`): enable it only if clients actually need HTTP/2 to the gateway (for example gRPC behind an L4 load balancer), since it adds a second protocol parser to the attack surface. Upstream connections are unaffected: they stay HTTP/1.1, and a request that HTTP/1.1 cannot express as sent - a header with a line break, a body longer or shorter than its `Content-Length` - is answered `400` rather than forwarded. |
+| `request_parse_timeout` | Duration | The timeout (e.g., `2s`) for parsing an incoming HTTP request. At most `24d` (2147483647 ms). |
+
+### Limits Configuration (`limits`)
+
+Configures boundaries and payload restrictions for incoming HTTP requests to prevent resource exhaustion.
+
+A request over `max_header_size` or `max_header_count` is refused before any filter runs, with `400` or `431` depending on which layer caught it. A body over `max_entity_size` is refused with `413` when its `Content-Length` declares it. A chunked body is stopped once it streams past the limit. A chunked body cut short for any reason (this limit, a client disconnect, a malformed chunk) never reaches the upstream as a complete request: the upstream connection is closed mid-body. These limits hold on every server r7 runs on, including the experimental servlet host, whatever the server's own parser settings.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `max_header_size` | Size | The maximum size of the request line and all request headers combined (e.g., `8KB`), not of each header separately. At most 62500 bytes, the longest input configured regular expressions are budgeted for. |
+| `max_header_count` | Integer | The maximum number of HTTP headers allowed per request. |
+| `max_entity_size` | Size | The maximum allowed request payload/entity size (e.g., `2MB`). |
+| `trusted_proxies` | List of Strings | CIDR ranges (e.g., `["10.0.0.0/8"]`) of reverse proxies allowed to set `X-Forwarded-For`/`X-Real-IP`. Empty by default: the socket peer address is always used, so a direct client cannot spoof its own address. When `X-Forwarded-For` is a multi-hop chain, it is walked from right to left, trusting only the hops that are themselves in `trusted_proxies`; the resolved address is the first (rightmost-to-leftmost) entry that isn't. This stops a client from spoofing the header by prepending a forged entry before the value a trusted proxy appended. |
+
+#### Headers forwarded to the upstream
+
+Before a request is proxied, r7 removes the client headers an upstream must not receive as written. The journal and filters still see the client's original headers.
+
+* **Hop-by-hop headers** (RFC 9110 §7.6.1): `Connection`, `Keep-Alive`, `Proxy-Connection`, `Proxy-Authorization`, `Upgrade`, `TE` (except `TE: trailers`), and every header named in `Connection`. A WebSocket upgrade keeps `Upgrade: websocket` and is sent with `Connection: Upgrade`. `Host`, `Content-Length` and `Transfer-Encoding` are never removed because a client named them in `Connection`.
+* **Forwarding and identity claims**, unless the peer is in `trusted_proxies`: `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `X-Cluster-Client-IP`, and the path overrides `X-Original-URL` and `X-Rewrite-URL`. The `X-Forwarded-*` match is on the header name's letters, not its exact spelling: `X_Forwarded_For` and other underscore or mixed-separator variants are stripped too, since CGI-derived backends (classic CGI, FastCGI, and frameworks that read headers out of a CGI-style environment) fold every `-` in a header name to `_` before their application code ever sees it, so such a backend reads either spelling identically.
+
+r7 then sets `X-Forwarded-For`, `-Proto`, `-Host`, `-Port` and `-Server` itself. For a trusted proxy it extends that proxy's values (its client's address stays in `X-Forwarded-For`, followed by the proxy's own); for anyone else they describe the direct connection. Upstreams can therefore trust the `X-Forwarded-*` headers they receive from r7.
+
+r7 sends the target's own `Host` (its host, and its port when the target URL names one), or the client's with [`preserve_host`](#4-upstream-configuration).
+
+### Proxy Client (`proxy`)
+
+Configures r7's upstream client, an HTTP/1.1 client with a keep-alive pool per target.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `max_connections_per_target` | Integer | Requests in flight to one upstream target, each on a connection of its own. Defaults to `4096`. |
+| `max_queue_size` | Integer | Requests that may wait for one of those to finish; past it a request is answered `503`. Defaults to `1000`. |
+| `max_request_time` | Duration | The longest a proxied exchange may take, waiting for a connection included, before it is answered `504`. Defaults to `60s`; at most `24d` (2147483647 ms). |
+| `ttl` | Duration | How long an idle pooled connection is kept (e.g., `30s`): below the upstream's own keep-alive timeout, since a request that fails on a connection the upstream already closed is retried only when it is idempotent. At most `24d` (2147483647 ms). |
+
+Response framing is checked strictly: conflicting `Content-Length`s, folded headers, malformed chunks and transfer codings other than `chunked` are answered `502`, and the connection is not reused. A target that refuses the connection is skipped for the next. `https` targets are verified against the JVM's trust store, host name included. A WebSocket handshake the upstream accepts (`101`) becomes a tunnel that carries bytes both ways until either side closes; see `idle_timeout` above.
+
+### Storage & Journaling (`storage`)
+
+Configures the disk-backed storage mechanism used for high-speed request and response journaling.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `work_dir` | String | The directory path where the memory-mapped journal files are stored. Defaults to `journals` (relative to the working directory), or to the `R7_JOURNAL_DIR` environment variable when set; the container images set it to `/journals`. Created with mode `0750`, and journal segments with `0640` (owner read-write, group read): a sidecar tailer running as another user needs to share the gateway's group. The umask can only narrow these; an existing directory or file keeps its mode. |
+| `shard_size` | Size | The target size limit for a single journal shard (e.g., `200MB`). Must be a whole number of 32KB journal blocks, from 64KB to just under 2GB; any whole number of megabytes qualifies. |
+| `shard_count` | Integer | The number of shards (files) to split the journal across, to reduce lock contention. Defaults to one per CPU, rounded down to a power of two, from `2` to `16`; must be a power of two. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
+| `pre_fault` | Boolean | Touch every page of each segment before the writer gets it. Defaults to `false`, and best left so on Linux 5.14 and later. See [Performance tuning](performance_tuning.md#journal-storage-shard_count-pre_fault-and-where-segments-live). |
+| `compression` | String | `zstd` (the default) or `none`. Where zstd's native library cannot be loaded, the journal is written uncompressed and a warning is logged. See [Performance tuning](performance_tuning.md#journal-compression-compression-and-compression_level). |
+| `compression_level` | Integer | zstd level, `1` to `19`. Defaults to `1`. Ignored when `compression` is `none`. |
+| `journal_security` | Object | Which header and query parameter values are journaled in plain text, and the fingerprint key. See below. |
+
+#### Journal Redaction (`storage.journal_security`)
+
+Shapes which header and query parameter values the journal keeps in plain text; every other
+value is written as a fingerprint. What is redacted, what a fingerprint is and how the key is
+used are described once, in
+[Journaling: redacted header and query parameter values](journaling.md#redacted-header-and-query-parameter-values).
+Redaction affects only the journal, never what is sent to clients or upstreams.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `additional_safe_request_headers` | List of Strings | Request header names to add on top of the built-in safe list, so their values are journaled in plain text. |
+| `additional_safe_response_headers` | List of Strings | Response header names to add on top of the built-in safe list. |
+| `safe_request_headers` | List of Strings | If non-empty, replaces the built-in request safe list entirely: the effective list is exactly this one. |
+| `safe_response_headers` | List of Strings | If non-empty, replaces the built-in response safe list entirely. |
+| `safe_query_parameters` | List of Strings | Query parameter names whose values are journaled in plain text. Empty by default. Write names decoded; a name containing a percent-escape is refused at startup. |
+| `safe_query_parameters_case_sensitive` | Boolean | Match `safe_query_parameters` exactly, case included. Defaults to `false`: `page` on the list also covers `Page` and `PAGE`. |
+| `fingerprint_key` | String | **Required**, at least 32 characters. The secret key behind every fingerprint. Defaults to the `R7_FINGERPRINT_KEY` environment variable; r7 does not start without one or the other. |
+
+Header names are matched case-insensitively. There is no way to remove a single header from the
+built-in safe list while keeping the rest: use `safe_*_headers` to replace the whole list if
+you need exact control. Setting both `additional_safe_*_headers` and `safe_*_headers` for the
+same direction is a validation error: a full replacement and an addition to the defaults it
+replaces is a contradiction, not something to guess at.
+
+```yaml title="server.yaml"
+storage:
+  journal_security:
+    # Add a couple of names to the built-in defaults. Only ever add headers whose values
+    # are not secrets or credentials - anything on this list is journaled in plain text.
+    additional_safe_request_headers:
+      - x-tenant-id
+    additional_safe_response_headers:
+      - x-internal-build-id
+
+    # ...or replace the response safe list entirely (mutually exclusive with
+    # additional_safe_response_headers above):
+    # safe_response_headers:
+    #   - content-type
+    #   - etag
+
+    # Query parameters journaled in plain text; every other value is fingerprinted.
+    safe_query_parameters:
+      - page
+      - sort
+```

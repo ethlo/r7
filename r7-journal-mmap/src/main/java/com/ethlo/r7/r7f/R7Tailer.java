@@ -1,0 +1,1454 @@
+package com.ethlo.r7.r7f;
+
+import static com.ethlo.r7.r7f.R7fConstants.ACTIVE_FILE_EXTENSION;
+import static com.ethlo.r7.r7f.R7fConstants.R7F_FILE_EXTENSION;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.locks.LockSupport;
+import java.util.stream.Stream;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ethlo.r7.journal.api.ExchangeCompletionListener;
+import com.ethlo.r7.journal.api.JournalIntegrityListener;
+import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.journal.api.TailerProgress;
+
+public final class R7Tailer
+{
+    private static final Logger logger = LoggerFactory.getLogger(R7Tailer.class);
+    private static final String CHECKPOINT_FILE = TailerProgress.FILE_NAME;
+
+    /**
+     * Sentinel offset meaning "this segment has been read to the end".
+     */
+    private static final long FULLY_READ = TailerProgress.FINISHED;
+
+    /**
+     * Read to the end, but the reader gave up on entries it could still have decoded — a
+     * sequence regression, where the segment stops being a valid append-only log partway
+     * through. Such a segment is never re-read, and (like every segment this tailer reads)
+     * never deleted by this tailer regardless of the outcome.
+     * <p>
+     * The distinction still matters to whatever external reaper owns retention: bytes lost
+     * to a hole or a bad CRC are gone whoever looks at them, so keeping the file preserves
+     * nothing but forensics. Bytes after a regression are still there and still decodable —
+     * deleting the segment is the only thing that would actually destroy them.
+     */
+    private static final long FULLY_READ_UNDELIVERED = -2L;
+
+    /**
+     * Set aside: a sealed segment this tailer cannot read (a foreign file, an unsupported
+     * format version or codec) or a file whose name gives it no place in the stream.
+     * <p>
+     * Recorded here rather than by renaming the file, because the journal directory belongs to
+     * the gateway and is mounted read-only into a tailer: the rename failed on every tick, and
+     * the file was neither read nor set aside, only reported again. It is also the tailer's own
+     * verdict, and another tailer (a newer build that reads the version this one does not) may
+     * well read the same file. Reported once, when first recorded; re-checked every tick, so a
+     * tailer upgrade or a replaced file is picked up without editing the checkpoint file.
+     */
+    private static final long QUARANTINED = -3L;
+
+    private final Map<String, Checkpoint> checkpoints = new HashMap<>();
+
+    /**
+     * File-name metadata, memoised for the duration of one tick and cleared at the start of
+     * the next. Single-threaded: {@code runTick} is the only caller.
+     */
+    private final Map<Path, FileMeta> metaCache = new HashMap<>();
+    private final Path logDir;
+    private final ExchangeReassembler reassembler;
+    private final JournalIntegrityListener integrity;
+    private final Path checkpointPath;
+
+    /**
+     * Guards every method that touches {@link #checkpoints} or {@link #reassembler}.
+     * <p>
+     * {@code shutdown()} is meant to run from a JVM shutdown hook thread - a container's
+     * SIGTERM handler - which has no other relationship to whatever thread is driving the
+     * normal poll loop's {@code runTick()} calls. SIGTERM can land at any point, including
+     * mid-tick, and both methods read and structurally mutate the same plain, non-thread-safe
+     * {@code checkpoints} map and the reassembler's in-flight tracking. Without this lock,
+     * a shutdown racing a tick corrupts that state - observed as anything from a
+     * {@code ConcurrentModificationException} to a {@code NullPointerException} deep inside
+     * the reassembler's tracking table - at exactly the moment the shutdown path exists to
+     * make a restart safer, not to add a new way to lose or corrupt progress.
+     */
+    private final Object lock = new Object();
+
+    private long totalBytesRead = 0;
+    private long totalMissingEntries = 0;
+    private long totalCorruptEntries = 0;
+    // The reassembler's orphan counters are cumulative; these hold their values at the start of
+    // the tick so logStats() can report what this tick added.
+    private long orphanedEndsBefore = 0;
+    private long orphanedBodiesBefore = 0;
+
+    /**
+     * Records where each open exchange began, so a restart can rebuild it; every segment is
+     * decoded through it. See {@link OpenExchanges}.
+     */
+    private final OpenExchanges open;
+
+    /**
+     * Exchanges that were open when the checkpoint file was last written, still to be rebuilt
+     * by replaying their entries. Loaded at construction, replayed on the first tick, and
+     * carried into every save until then so that a restart before that tick loses nothing.
+     */
+    private Map<Integer, OpenExchanges.Resume> pendingReplay = Map.of();
+
+    /**
+     * Mappings of active segments, kept across ticks; see {@link #map}.
+     */
+    private final Map<String, ActiveMapping> activeMappings = new HashMap<>();
+
+    /**
+     * Listing the directory is most of what an idle tick costs, and grows with every retained
+     * segment, yet in steady state it can only say what the last one said: each shard is
+     * reading its active segment. So a listing that finds exactly that leaves those segments
+     * here, and the ticks after it read them directly, until one is sealed (its seal magic is
+     * in the mapping, stamped before the writer renames it) or {@link #RELIST_INTERVAL_NANOS}
+     * has passed. {@code null} when the last listing found anything else: a shard catching
+     * up, a stall, a shard with no active segment, an open-exchange replay to run.
+     */
+    private List<Path> steadySegments;
+    private long lastListingNanos;
+
+    /**
+     * How long the steady path may go without a listing. Rotation is seen through the seal
+     * magic; this covers what is not, such as a gateway restarting with a new set of shards.
+     */
+    private static final long RELIST_INTERVAL_NANOS = Duration.ofSeconds(5).toNanos();
+
+    /**
+     * The shards' {@link CommitSignal}s, found at each listing, and their values when the
+     * current tick began. Replaced whole, never mutated, so {@link #awaitNewData} can read them
+     * without the lock.
+     */
+    private volatile Map<Path, ByteBuffer> signals = Map.of();
+    private volatile ByteBuffer[] signalBuffers = new ByteBuffer[0];
+    private volatile long[] signalsSeen = new long[0];
+
+    /** How long {@link #awaitNewData} spins before it starts to park. */
+    private static final long SPIN_NANOS = 20_000L;
+    /** The first park, doubled on each one after it up to {@link #MAX_PARK_NANOS}. */
+    private static final long MIN_PARK_NANOS = 10_000L;
+    /** The longest an idle tailer sleeps between looks at the signals. */
+    private static final long MAX_PARK_NANOS = 1_000_000L;
+
+    /**
+     * What the checkpoint file on disk holds, so an unchanged state is not written again.
+     * Rewriting it was a third of an idle tick.
+     */
+    private Map<String, Checkpoint> savedCheckpoints = Map.of();
+    private Map<Integer, OpenExchanges.Resume> savedResumePoints = Map.of();
+
+    /**
+     * While only read positions move, the checkpoint file is written at most this often, and
+     * always by {@link #shutdown()}; a change in which segments there are or what state they
+     * are in is written at once ({@link #segmentStateChanged()}).
+     * Writing it is the whole file each time, a few hundred microseconds with a realistic
+     * number of retained segments, which bounded how short a tick could usefully be. A hard
+     * kill re-delivers what completed since the last write (README.md §11.6), so this is also
+     * the bound on that window, the same as the default poll interval gave before.
+     */
+    private static final long SAVE_INTERVAL_NANOS = Duration.ofSeconds(1).toNanos();
+    private long lastSaveNanos;
+    private boolean savedOnce;
+
+    public R7Tailer(final Path logDir, final ExchangeCompletionListener output)
+    {
+        this(logDir, output, JournalIntegrityListener.NOOP, ReassemblyOptions.DEFAULTS);
+    }
+
+    /**
+     * @param integrity receives damage and loss events for the segments read
+     */
+    public R7Tailer(final Path logDir,
+                    final ExchangeCompletionListener output,
+                    final JournalIntegrityListener integrity)
+    {
+        this(logDir, output, integrity, ReassemblyOptions.DEFAULTS);
+    }
+
+    /**
+     * @param integrity receives damage and loss events for the segments read
+     * @param options   reassembly tuning; see {@code README.md} §11 for the side-effects
+     *                  of each setting
+     */
+    public R7Tailer(final Path logDir,
+                    final ExchangeCompletionListener output,
+                    final JournalIntegrityListener integrity,
+                    final ReassemblyOptions options)
+    {
+        this(logDir, null, output, integrity, options);
+    }
+
+    /**
+     * This tailer never deletes a segment - retention is a dedicated reaper's job, applied
+     * uniformly across every tailer sharing the journal directory, not a concern of a class
+     * whose only job is reading and delivering exchanges. Mount {@code logDir} read-only for
+     * every tailer here for that to be enforced rather than merely intended.
+     *
+     * @param checkpointDir where {@code .r7_checkpoints} is read from and written to; defaults
+     *                      to {@code logDir} when {@code null}. Giving each tailer process its
+     *                      own directory (outside the shared journal mount) is what lets more
+     *                      than one tailer follow the same journal directory without the
+     *                      tailers overwriting each other's progress file.
+     * @param integrity     receives damage and loss events for the segments read
+     * @param options       reassembly tuning; see {@code README.md} §11 for the side-effects
+     *                      of each setting
+     */
+    public R7Tailer(final Path logDir,
+                    final Path checkpointDir,
+                    final ExchangeCompletionListener output,
+                    final JournalIntegrityListener integrity,
+                    final ReassemblyOptions options)
+    {
+        this.logDir = logDir;
+        this.reassembler = new ExchangeReassembler(output, options, integrity);
+        this.open = new OpenExchanges(reassembler);
+        this.integrity = integrity;
+        final Path resolvedCheckpointDir = checkpointDir != null ? checkpointDir : logDir;
+        try
+        {
+            Files.createDirectories(resolvedCheckpointDir);
+        }
+        catch (final IOException e)
+        {
+            throw new UncheckedIOException("Could not create checkpoint directory " + resolvedCheckpointDir, e);
+        }
+        this.checkpointPath = resolvedCheckpointDir.resolve(CHECKPOINT_FILE);
+        loadCheckpoints();
+    }
+
+    /**
+     * Persists the checkpoint state one last time, so that a graceful stop resumes from where
+     * reading actually got to rather than from the last tick.
+     * <p>
+     * Exchanges still being assembled are not reported as abandoned: the checkpoint file
+     * records where each began, and the next run rebuilds and completes them
+     * ({@link OpenExchanges}). The same holds after a hard crash, which runs no code at all,
+     * as of the last completed tick. What a restart cannot rebuild — an exchange whose first
+     * segment was deleted in the meantime — is reported then.
+     */
+    public void shutdown()
+    {
+        synchronized (lock)
+        {
+            saveCheckpoints();
+        }
+    }
+
+    public long runTick() throws IOException
+    {
+        synchronized (lock)
+        {
+            snapshotSignals();
+            totalBytesRead = 0;
+            totalMissingEntries = 0;
+            totalCorruptEntries = 0;
+            orphanedEndsBefore = reassembler.getOrphanedEndCount();
+            orphanedBodiesBefore = reassembler.getOrphanedBodyCount();
+            metaCache.clear();
+
+            try
+            {
+                runTickBody();
+            }
+            finally
+            {
+                // Whatever happened above, work that was already dispatched must not be left
+                // un-checkpointed: the next tick would re-read those bytes and emit every
+                // exchange in them a second time. One I/O error on one file used to discard the
+                // progress of every file processed before it in the same tick.
+                // The reassembler's age sweep is amortised over incoming events, so on a quiet
+                // stream it would never run and abandoned exchanges would go unreported until
+                // traffic resumed. A tick boundary is a natural pause.
+                reassembler.sweep();
+                logStats();
+                if (!savedOnce || segmentStateChanged() || System.nanoTime() - lastSaveNanos >= SAVE_INTERVAL_NANOS)
+                {
+                    saveCheckpoints();
+                }
+            }
+
+            return totalBytesRead;
+        }
+    }
+
+    private void runTickBody() throws IOException
+    {
+        if (isSteady())
+        {
+            for (final Path path : steadySegments)
+            {
+                processFile(path);
+            }
+            return;
+        }
+        steadySegments = null;
+
+        try (final Stream<Path> s = Files.list(logDir))
+        {
+            // Collect and deduplicate files by their stable key, which resolves an active
+            // file and the sealed file it rotates into to the same segment.
+            final Map<String, Path> resolvedFiles = new HashMap<>();
+            final Set<String> setAsideKeys = new HashSet<>();
+
+            s.filter(p -> {
+                        final String name = p.getFileName().toString();
+                        return name.endsWith(R7F_FILE_EXTENSION) ||
+                                name.endsWith(ACTIVE_FILE_EXTENSION);
+                    })
+                    .filter(p -> hasReadableIdentity(p, setAsideKeys))
+                    .forEach(path -> {
+                        final String key = getStableKey(path);
+                        final Path existing = resolvedFiles.get(key);
+
+                        // Priority: .r7f > .flux
+                        if (existing == null || isHigherPriority(path, existing))
+                        {
+                            resolvedFiles.put(key, path);
+                        }
+                    });
+
+            if (!pendingReplay.isEmpty())
+            {
+                replayOpenExchanges(resolvedFiles);
+            }
+
+            // Sort the resolved files and process them sequentially.
+            // Segment sequence is a monotonic counter per shard, so it orders segments
+            // exactly; the creation timestamp is wall-clock and cannot be relied on for
+            // ordering across a clock step.
+            //
+            // Shards whose current segment did not finish this tick must not be advanced
+            // past: the reassembler joins an exchange whose start is in one segment to its
+            // end in the next (design/journal-invariants.md #3), so reading segment N+1
+            // while segment N is still short of its end delivers N+1's events - including
+            // an END for an exchange whose START is still stuck behind whatever stopped N
+            // early - before N's own remaining events. That END then finds nothing in
+            // flight and is reported an orphan: a real, permanent loss with no damage
+            // anywhere in the journal, because the reader simply read out of order. A
+            // segment left in FULLY_READ_UNDELIVERED is the one exception - it is terminal
+            // (a sequence regression the reader will never revisit) rather than something a
+            // later tick might finish, so it must not block the shard forever.
+            final Set<Integer> blockedShards = new HashSet<>();
+            final Map<Integer, Path> firstUnfinished = new TreeMap<>();
+            resolvedFiles.values().stream()
+                    .sorted((p1, p2) -> {
+                        final FileMeta m1 = parseMeta(p1);
+                        final FileMeta m2 = parseMeta(p2);
+                        if (m1.shardId() != m2.shardId())
+                        {
+                            return Integer.compare(m1.shardId(), m2.shardId());
+                        }
+                        return Long.compare(m1.segmentSequence(), m2.segmentSequence());
+                    })
+                    .forEach(path -> {
+                        final FileMeta meta = parseMeta(path);
+                        if (blockedShards.contains(meta.shardId()))
+                        {
+                            return;
+                        }
+
+                        final boolean finished;
+                        try
+                        {
+                            finished = processFile(path);
+                        }
+                        catch (final IOException e)
+                        {
+                            throw new UncheckedIOException(e);
+                        }
+
+                        if (!finished && !isTerminallyUnfinished(path))
+                        {
+                            blockedShards.add(meta.shardId());
+                            firstUnfinished.put(meta.shardId(), path);
+                        }
+                    });
+
+            // Only here, where the listing completed and every file in it was processed, do
+            // we know which segments still exist. Rotation, clean close, recovery and the
+            // reaper that owns retention for this journal directory all delete segments the
+            // tailer may hold a checkpoint for — an empty segment, an unused pre-allocation,
+            // a segment whose retention window elapsed — and nothing else would ever remove
+            // those entries. They are not merely a leak: a checkpoint outliving its segment
+            // is what lets a reused (shard, sequence) resume a brand-new segment at a dead
+            // one's offset.
+            final Set<String> keysOnDisk = new HashSet<>(resolvedFiles.keySet());
+            keysOnDisk.addAll(setAsideKeys);
+            forgetCheckpointsWithoutSegments(keysOnDisk);
+
+            final Set<Integer> shards = new HashSet<>();
+            resolvedFiles.values().forEach(p -> shards.add(parseMeta(p).shardId()));
+            final boolean steady = !firstUnfinished.isEmpty()
+                    && firstUnfinished.keySet().equals(shards)
+                    && firstUnfinished.values().stream().allMatch(p -> p.toString().endsWith(ACTIVE_FILE_EXTENSION));
+            steadySegments = steady ? List.copyOf(firstUnfinished.values()) : null;
+            lastListingNanos = System.nanoTime();
+
+            final Set<String> activeKeys = new HashSet<>();
+            resolvedFiles.forEach((key, p) ->
+            {
+                if (p.toString().endsWith(ACTIVE_FILE_EXTENSION))
+                {
+                    activeKeys.add(key);
+                }
+            });
+            activeMappings.keySet().retainAll(activeKeys);
+            refreshSignals();
+        }
+    }
+
+    /**
+     * Whether a segment's name tells us where it belongs in the stream, setting it aside if
+     * it does not.
+     * <p>
+     * Order is not a nicety here: the reassembler joins an exchange whose start is in one
+     * segment to its end in the next, so replaying segments out of order turns a whole
+     * exchange into an orphaned end. Segments are ordered by (shard, sequence), and both come
+     * from the file name — so a name this parser cannot read has no position in the stream at
+     * all. Every such file used to be given the same {@code (-1, -1)}, which sorted them
+     * equal to each other and ahead of every real shard, leaving the actual order to whatever
+     * {@link Files#list} happened to return. That is unspecified, so the outcome varied by
+     * filesystem.
+     * <p>
+     * The writer cannot produce such a name — sealing preserves the stem, and the gateway's
+     * recovery quarantine moves the file out of the tailer's filter entirely — so this only
+     * happens when someone puts a file here by hand, usually restoring one. Quarantine says so
+     * and leaves the contents alone; a rename puts it back in the stream. Guessing at the order and replaying it
+     * would risk assembling records that never happened, and an audit log may not do that
+     * even once.
+     * <p>
+     * An active file is left alone whatever its name: it may belong to a writer, and renaming
+     * a file a writer has mapped would leave rotation unable to seal it.
+     */
+    private boolean hasReadableIdentity(final Path path, final Set<String> setAsideKeys)
+    {
+        if (parseMeta(path).segmentSequence() >= 0)
+        {
+            return true;
+        }
+
+        if (path.toString().endsWith(ACTIVE_FILE_EXTENSION))
+        {
+            logger.debug("Leaving active file with an unrecognized name alone: {}", path.getFileName());
+            return false;
+        }
+
+        final String key = getStableKey(path);
+        setAsideKeys.add(key);
+        quarantine(path, key, "the file name carries no shard and sequence, so the segment has no "
+                + "position in the stream and cannot be replayed in order");
+        return false;
+    }
+
+    /**
+     * Drops checkpoints for segments that are no longer on disk.
+     */
+    private void forgetCheckpointsWithoutSegments(final Set<String> keysOnDisk)
+    {
+        final int before = checkpoints.size();
+        checkpoints.keySet().retainAll(keysOnDisk);
+        final int dropped = before - checkpoints.size();
+        if (dropped > 0)
+        {
+            logger.debug("Dropped {} checkpoint(s) whose segment no longer exists", dropped);
+        }
+    }
+
+    private boolean isHigherPriority(final Path newPath, final Path existingPath)
+    {
+        return newPath.toString().endsWith(R7F_FILE_EXTENSION)
+                && existingPath.toString().endsWith(ACTIVE_FILE_EXTENSION);
+    }
+
+    /**
+     * Whether a segment that {@link #processFile} just reported as not finished is done for
+     * good rather than merely waiting for a later tick.
+     * <p>
+     * {@code FULLY_READ_UNDELIVERED} means the reader already read to the end and decided,
+     * once, to keep entries back (a sequence regression) - nothing about that changes on a
+     * later tick, so it must not be allowed to block every later segment in the shard
+     * forever. {@code QUARANTINED} is the same: a segment this tailer cannot read used to be
+     * renamed out of the listing, and recording it instead must not turn it into a block. Anything else that did not finish - an active segment still being written, a
+     * corrupt entry left for the segment to be sealed, a delivery stall awaiting a retry, or
+     * simply a segment that vanished mid-check - may still finish on its own, and the shard
+     * must not be advanced past it in the meantime.
+     */
+    private boolean isTerminallyUnfinished(final Path path)
+    {
+        final Checkpoint checkpoint = checkpoints.get(getStableKey(path));
+        return checkpoint != null && (checkpoint.offset() == FULLY_READ_UNDELIVERED || checkpoint.offset() == QUARANTINED);
+    }
+
+    /**
+     * Waits until a writer has committed something since the current tick began, or until
+     * {@code timeout}, whichever is first (design/history/live-tailing.md, step 3). Returns at once if
+     * something was committed while the tick ran, which costs at most one tick that finds
+     * nothing.
+     * <p>
+     * It spins for {@link #SPIN_NANOS}, then parks for growing intervals up to
+     * {@link #MAX_PARK_NANOS}, looking at the shards' commit counters in between: under load it
+     * never sleeps, and idle it costs a few loads a millisecond. Without any signal to watch (a
+     * writer that could not create one) it simply sleeps for {@code timeout}, which is how the
+     * tailer polled before.
+     *
+     * @return whether a commit was seen; {@code false} on timeout
+     */
+    public boolean awaitNewData(final Duration timeout) throws InterruptedException
+    {
+        final ByteBuffer[] buffers = signalBuffers;
+        final long[] seen = signalsSeen;
+        if (buffers.length == 0 || seen.length != buffers.length)
+        {
+            Thread.sleep(timeout);
+            return false;
+        }
+
+        final long start = System.nanoTime();
+        final long deadline = start + timeout.toNanos();
+        long park = MIN_PARK_NANOS;
+        while (true)
+        {
+            for (int i = 0; i < buffers.length; i++)
+            {
+                if (CommitSignal.read(buffers[i]) != seen[i])
+                {
+                    return true;
+                }
+            }
+            final long now = System.nanoTime();
+            if (now - deadline >= 0)
+            {
+                return false;
+            }
+            if (now - start < SPIN_NANOS)
+            {
+                Thread.onSpinWait();
+                continue;
+            }
+            LockSupport.parkNanos(Math.min(park, deadline - now));
+            if (Thread.interrupted())
+            {
+                throw new InterruptedException();
+            }
+            park = Math.min(park * 2, MAX_PARK_NANOS);
+        }
+    }
+
+    private void snapshotSignals()
+    {
+        final ByteBuffer[] buffers = signalBuffers;
+        final long[] seen = new long[buffers.length];
+        for (int i = 0; i < buffers.length; i++)
+        {
+            seen[i] = CommitSignal.read(buffers[i]);
+        }
+        signalsSeen = seen;
+    }
+
+    private void refreshSignals() throws IOException
+    {
+        final Map<Path, ByteBuffer> found = new HashMap<>();
+        try (Stream<Path> files = Files.list(logDir))
+        {
+            for (final Path path : files.filter(CommitSignal::isSignalFile).toList())
+            {
+                final ByteBuffer existing = signals.get(path);
+                final ByteBuffer mapped = existing != null ? existing : CommitSignal.mapForReading(path);
+                if (mapped != null)
+                {
+                    found.put(path, mapped);
+                }
+            }
+        }
+        if (!found.keySet().equals(signals.keySet()))
+        {
+            final ByteBuffer[] buffers = found.values().toArray(new ByteBuffer[0]);
+            signals = Map.copyOf(found);
+            signalBuffers = buffers;
+            // Not "seen as of now": something may have been committed during the tick that
+            // found these, after the point it read to. Never seen, so the next wait returns at
+            // once and the tick after it looks; that costs one tick, a stale value one interval.
+            final long[] seen = new long[buffers.length];
+            java.util.Arrays.fill(seen, Long.MIN_VALUE);
+            signalsSeen = seen;
+        }
+    }
+
+    private boolean isSteady()
+    {
+        if (steadySegments == null || !pendingReplay.isEmpty()
+                || System.nanoTime() - lastListingNanos >= RELIST_INTERVAL_NANOS)
+        {
+            return false;
+        }
+        for (final Path path : steadySegments)
+        {
+            final ActiveMapping mapping = activeMappings.get(getStableKey(path));
+            if (mapping == null || !mapping.path().equals(path) || mapping.isSealed())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean processFile(final Path path) throws IOException
+    {
+        final String key = getStableKey(path);
+        final Checkpoint recorded = checkpoints.getOrDefault(key, Checkpoint.START);
+        final boolean wasQuarantined = recorded.offset() == QUARANTINED;
+        // A quarantined segment is re-checked from the start: if it is readable now, nothing
+        // of it was ever delivered.
+        final Checkpoint checkpoint = wasQuarantined ? Checkpoint.START : recorded;
+
+        // Sentinel check: the file has been read to the end, so do not map it again.
+        if (checkpoint.offset() == FULLY_READ)
+        {
+            return true;
+        }
+        if (checkpoint.offset() == FULLY_READ_UNDELIVERED)
+        {
+            // Finished, but holding entries this reader declined to deliver. Reporting it
+            // "not finished" leaves it out of a future reap-eligible accounting, for as long
+            // as it is here — deliberately, until someone decides what to do with it.
+            return false;
+        }
+
+        // Named as the writer's: it may still be appending, and it is never ours to set aside.
+        final boolean writerOwned = path.toString().endsWith(ACTIVE_FILE_EXTENSION);
+
+        // Enforce the preamble boundary so FlatBuffers never sees the manual binary header
+        final long startOffset = Math.max(checkpoint.offset(), R7fConstants.PREAMBLE_SIZE);
+
+        final ByteBuffer mappedBuffer = map(path, key, writerOwned);
+        if (mappedBuffer == null)
+        {
+            return false;
+        }
+        final long fileSize = mappedBuffer.capacity();
+
+        // The writer stamps the seal record the moment it rotates, but fsyncs and renames the
+        // segment on another thread. Until that rename lands the segment still carries its
+        // active name, and reading it as active left it "unfinished": its shard was blocked,
+        // and the next segment, where the writer already was, went unread for as long as the
+        // fsync took. The seal magic is the writer's commit of the seal record, so a segment
+        // that carries it is read as sealed, whatever its name.
+        final boolean isActive = writerOwned && !hasSealMagic(mappedBuffer);
+
+        {
+            if (isActive && fileSize <= startOffset)
+            {
+                // Nothing to read at this offset, and the writer will extend it. The only
+                // early exit left, and it is only safe because an active segment is never
+                // finished and so is never deleted on the strength of this.
+                return false;
+            }
+
+            // A sealed segment takes no shortcut, whatever its size. "The file is no longer
+            // than where I stopped reading" is not the same as "I read all of it", and the
+            // checkpoint this method leaves behind is what an external reaper trusts before
+            // it deletes anything — the two statements are only equivalent while nothing
+            // shrinks a file. A sealed segment that lost its tail is exactly the case the
+            // seal record was added to expose, and this exit would skip past the seal
+            // record and report the loss as a clean, reap-eligible read. Everything below —
+            // preamble validation, the declared Data End, the comparison against the
+            // recorded last sequence — has to run before this file can be called finished.
+            final ByteBuffer processingBuffer = mappedBuffer;
+
+            // Clamped, because the resume offset can now legitimately lie past the end of a
+            // file that shrank. There is nothing left to decode in that case; what matters is
+            // that the checks below still get to run and say so.
+            processingBuffer.position((int) Math.min(startOffset, fileSize));
+
+            final String preambleProblem = preambleProblem(processingBuffer);
+            if (preambleProblem != null)
+            {
+                if (writerOwned)
+                {
+                    // An active file belongs to the writer. The warmer pre-allocates the
+                    // next segment and the writer stamps its preamble only when it claims
+                    // it, so an all-zero header here is normal and momentary. More to the
+                    // point, renaming a file the writer has mapped would leave rotation
+                    // unable to seal it. Leave it be; recovery handles it at next boot.
+                    logger.debug("Skipping active segment {} for now: {}", path.getFileName(), preambleProblem);
+                    return false;
+                }
+
+                // A sealed file is nobody's to write any more. Without this
+                // check it would be decoded as whatever its bytes happened to look like,
+                // and then checkpointed as "processed" for a reaper to act on.
+                quarantine(path, key, preambleProblem);
+                return false;
+            }
+
+            if (wasQuarantined)
+            {
+                logger.info("Segment {} was quarantined by this tailer but is readable now; reading it", path.getFileName());
+                checkpoints.put(key, Checkpoint.START);
+            }
+
+            if (!isActive)
+            {
+                boundBySealedDataEnd(path, processingBuffer, fileSize);
+            }
+
+            final long before = processingBuffer.remaining();
+
+            // Carry the sequence across ticks: resuming mid-segment without it would let
+            // entries go missing across the resume boundary unnoticed.
+            final FileMeta meta = parseMeta(path);
+            open.enterSegment(meta.shardId(), meta.segmentSequence());
+            final JournalDecoder.DecodeStats stats = JournalDecoder.decode(
+                    processingBuffer,
+                    open,
+                    checkpoint.nextSequence(),
+                    path.getFileName().toString(),
+                    integrity,
+                    isActive,
+                    open);
+
+            totalBytesRead += before - processingBuffer.remaining();
+            totalMissingEntries += stats.missingEntries();
+            totalCorruptEntries += stats.corruptEntriesSkipped();
+
+            if (!stats.isClean())
+            {
+                logger.error("Segment {} is not intact: {} entries missing, {} corrupt regions skipped ({} bytes).",
+                        path.getFileName(), stats.missingEntries(), stats.corruptEntriesSkipped(), stats.bytesSkipped());
+            }
+
+            final boolean isFinished = processingBuffer.remaining() == 0 && !isActive;
+
+            final int nextSequence = stats.nextExpectedSequence() == JournalDecoder.UNKNOWN_SEQUENCE
+                    ? checkpoint.nextSequence()
+                    : stats.nextExpectedSequence();
+
+            if (isFinished)
+            {
+                verifyAgainstSealRecord(path, processingBuffer, nextSequence);
+
+                if (stats.undeliveredBytes() > 0)
+                {
+                    logger.error("Segment {} keeps {} bytes of readable entries this reader would not "
+                                    + "deliver; it will not be deleted. Inspect it and remove it by hand once "
+                                    + "the contents have been accounted for.",
+                            path.getFileName(), stats.undeliveredBytes());
+                    checkpoints.put(key, new Checkpoint(FULLY_READ_UNDELIVERED, nextSequence));
+                    return false;
+                }
+
+                if (sealedForRetention(processingBuffer))
+                {
+                    // Recovery stopped short of the end and said so. What it left behind lies
+                    // past Data End, so this reader never saw it and its own stats are
+                    // perfectly clean — which is precisely the trap: a clean read of a
+                    // deliberately shortened segment would be checkpointed as reap-eligible,
+                    // and the entries recovery preserved would be destroyed by whichever
+                    // reaper trusted that checkpoint, the one component whose own regression
+                    // handling exists to preserve them.
+                    logger.error("Segment {} was sealed by recovery with content past its data end that "
+                                    + "is readable but not replayable; it will not be deleted. Inspect it and "
+                                    + "remove it by hand once the contents have been accounted for.",
+                            path.getFileName());
+                    checkpoints.put(key, new Checkpoint(FULLY_READ_UNDELIVERED, nextSequence));
+                    return false;
+                }
+
+                checkpoints.put(key, new Checkpoint(FULLY_READ, nextSequence));
+            }
+            else
+            {
+                checkpoints.put(key, new Checkpoint(processingBuffer.position(), nextSequence));
+            }
+
+            return isFinished;
+        }
+    }
+
+    /**
+     * Maps a segment for reading, or returns {@code null} if it is gone.
+     * <p>
+     * An active segment's mapping is kept across ticks (design/history/live-tailing.md): the file is
+     * the writer's pre-allocation, created at its full size and never shrunk, so one mapping
+     * covers everything the writer will put in it, and mapping it again every tick only cost
+     * a syscall pair. A sealed segment is mapped per read; it is read to the end once.
+     */
+    private ByteBuffer map(final Path path, final String key, final boolean isActive) throws IOException
+    {
+        if (isActive)
+        {
+            final ActiveMapping cached = activeMappings.get(key);
+            if (cached != null && cached.path().equals(path))
+            {
+                return cached.buffer().duplicate().order(ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+
+        final MappedByteBuffer mapped;
+        try (final FileChannel channel = FileChannel.open(path, StandardOpenOption.READ))
+        {
+            mapped = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+        }
+        catch (final NoSuchFileException | FileNotFoundException e)
+        {
+            // Gone between the listing and here: a reaper may delete a fully read segment at
+            // any time. The next listing settles whether it is really gone.
+            return null;
+        }
+
+        // A file shorter than its preamble is one the writer has created but not yet sized;
+        // keeping that mapping would leave it short for good.
+        if (isActive && mapped.capacity() > R7fConstants.PREAMBLE_SIZE)
+        {
+            activeMappings.put(key, new ActiveMapping(path, mapped));
+        }
+        return mapped.duplicate().order(ByteOrder.LITTLE_ENDIAN);
+    }
+
+    private static boolean hasSealMagic(final ByteBuffer segment)
+    {
+        return segment.capacity() >= R7fConstants.PREAMBLE_SIZE
+                && segment.duplicate().order(ByteOrder.BIG_ENDIAN).getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) == R7fConstants.SEAL_MAGIC;
+    }
+
+    private record ActiveMapping(Path path, MappedByteBuffer buffer)
+    {
+        boolean isSealed()
+        {
+            return hasSealMagic(buffer);
+        }
+    }
+
+    /**
+     * Rebuilds the exchanges that were open when the checkpoint file was written, by replaying
+     * each shard from the earliest of their starts up to the checkpoint, for those request ids
+     * only. Nothing is delivered here: an exchange open at the checkpoint had not had its end
+     * event read by then, and the replay stops at the checkpoint. Damage in the replayed range
+     * was reported when it was first read, so it is not reported again.
+     */
+    private void replayOpenExchanges(final Map<String, Path> resolvedFiles)
+    {
+        final Map<Integer, OpenExchanges.Resume> replay = pendingReplay;
+        pendingReplay = Map.of();
+
+        replay.forEach((shard, resume) ->
+        {
+            final OpenExchanges.Start from = resume.from();
+            final List<Path> segments = resolvedFiles.values().stream()
+                    .filter(p -> parseMeta(p).shardId() == shard && parseMeta(p).segmentSequence() >= from.segment())
+                    .sorted(Comparator.comparingLong(p -> parseMeta(p).segmentSequence()))
+                    .toList();
+
+            open.acceptOnly(resume.requestIds());
+            try
+            {
+                if (!segments.isEmpty() && parseMeta(segments.getFirst()).segmentSequence() == from.segment())
+                {
+                    for (final Path path : segments)
+                    {
+                        final Checkpoint read = checkpoints.get(getStableKey(path));
+                        if (read == null)
+                        {
+                            // Never read, so nothing in it was lost.
+                            break;
+                        }
+                        if (read.offset() == QUARANTINED)
+                        {
+                            continue;
+                        }
+                        final boolean first = parseMeta(path).segmentSequence() == from.segment();
+                        replaySegment(path,
+                                first ? from.offset() : 0L,
+                                first ? from.sequence() : R7fConstants.FIRST_ENTRY_SEQUENCE,
+                                read);
+                        if (read.offset() >= 0)
+                        {
+                            // The checkpoint is inside this segment: everything after it is
+                            // still to be read normally.
+                            break;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                open.acceptAll();
+            }
+
+            final long rebuilt = resume.requestIds().stream().filter(reassembler::isOpen).count();
+            final long lost = resume.requestIds().size() - rebuilt;
+            if (rebuilt > 0)
+            {
+                logger.info("Rebuilt {} exchange(s) that were open at the last checkpoint of shard {}", rebuilt, shard);
+            }
+            if (lost > 0)
+            {
+                logger.error("Could not rebuild {} exchange(s) that were open at the last checkpoint of shard {}: "
+                                + "segment {} or a later one in the replayed range is gone or unreadable. They are lost.",
+                        lost, shard, from.segment());
+            }
+        });
+    }
+
+    /**
+     * Decodes {@code path} from {@code fromOffset} up to {@code read}, the tailer's checkpoint
+     * for it ({@link #FULLY_READ} and the like meaning the end of its data).
+     * <p>
+     * A checkpoint inside the data is bounded by its sequence as well as its offset: the offset
+     * of a checkpoint inside a batch is the batch's start, and the batch's entries before the
+     * checkpoint's sequence were read and belong in the replay.
+     */
+    private void replaySegment(final Path path, final long fromOffset, final int fromSequence, final Checkpoint read)
+    {
+        final long readOffset = read.offset();
+        final boolean bySequence = readOffset >= 0 && read.nextSequence() != JournalDecoder.UNKNOWN_SEQUENCE;
+        try (final RandomAccessFile raf = new RandomAccessFile(path.toFile(), "r");
+             final FileChannel channel = raf.getChannel())
+        {
+            final long fileSize = channel.size();
+            final MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
+            buffer.order(ByteOrder.LITTLE_ENDIAN);
+            if (readOffset >= 0 && !bySequence)
+            {
+                buffer.limit((int) Math.min(readOffset, fileSize));
+            }
+            else
+            {
+                // As boundBySealedDataEnd, but silent: a bad data end was reported when the
+                // segment was first read.
+                final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+                if (fileSize >= R7fConstants.PREAMBLE_SIZE && header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) == R7fConstants.SEAL_MAGIC)
+                {
+                    final long dataEnd = header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END);
+                    if (dataEnd >= R7fConstants.PREAMBLE_SIZE && dataEnd <= fileSize)
+                    {
+                        buffer.limit((int) dataEnd);
+                    }
+                }
+            }
+            final long start = Math.max(fromOffset, R7fConstants.PREAMBLE_SIZE);
+            if (start >= buffer.limit())
+            {
+                return;
+            }
+            buffer.position((int) start);
+
+            final FileMeta meta = parseMeta(path);
+            open.enterSegment(meta.shardId(), meta.segmentSequence());
+            // Treated as active so that reaching the bound is not reported as a truncation.
+            JournalDecoder.decode(buffer, open, fromSequence, path.getFileName().toString(),
+                    JournalIntegrityListener.NOOP, true, open, bySequence ? read.nextSequence() : Integer.MAX_VALUE);
+        }
+        catch (final IOException | RuntimeException e)
+        {
+            logger.error("Could not replay {} to rebuild open exchanges: {}", path.getFileName(), e.toString());
+        }
+    }
+
+    /**
+     * Limits a sealed segment to the extent its seal record declares.
+     * <p>
+     * Sealing no longer has to truncate for this to work. Where the data ends used to be
+     * inferred from the file's size, which meant every seal had to cut the pre-allocated
+     * tail or the reader would read zeroes and call them lost pages. Now it is a recorded
+     * fact, so the tail is simply outside the segment's contents — neither data nor damage.
+     * <p>
+     * A segment with no seal record falls back to the whole file and the old inference; that
+     * is reported by {@link #verifyAgainstSealRecord} when the segment finishes.
+     */
+    private void boundBySealedDataEnd(final Path path, final ByteBuffer buffer, final long fileSize)
+    {
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+        if (header.limit() < R7fConstants.PREAMBLE_SIZE
+                || header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) != R7fConstants.SEAL_MAGIC)
+        {
+            return;
+        }
+
+        final long dataEnd = header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END);
+        final String name = path.getFileName().toString();
+
+        if (dataEnd < R7fConstants.PREAMBLE_SIZE || dataEnd > fileSize)
+        {
+            // Beyond the file, or nonsensical. A data end past the end of the file means the
+            // segment lost its tail after being sealed — which is exactly the loss the seal
+            // record exists to expose, and which nothing inside the file could show.
+            logger.error("Segment {} declares data ending at {} but the file is {} bytes.",
+                    name, dataEnd, fileSize);
+            integrity.onCorruptRegion(name, Math.min(dataEnd, fileSize), Math.max(0L, dataEnd - fileSize),
+                    "declared data end lies outside the file");
+            return;
+        }
+
+        // Clamping rather than comparing: a resume offset at or past the declared end means
+        // the segment has been read out, and the buffer must end there so the caller sees
+        // "finished" rather than decoding the pre-allocated tail as a hole.
+        buffer.limit((int) Math.max(dataEnd, buffer.position()));
+    }
+
+    /**
+     * Compares what this reader decoded against what the segment says it holds.
+     * <p>
+     * A sealed segment records its entry count and last sequence in its preamble, behind a
+     * seal magic written last (FORMAT.md 3.2). That turns "did I read all of it?" from
+     * something inferred out of not having hit anything unusual into a comparison that either
+     * matches or does not.
+     * <p>
+     * Only the last sequence is checked here, because it needs no state the tailer does not
+     * already carry across ticks. The entry count is for a full-scan verifier, which can
+     * count what it sees.
+     */
+    private void verifyAgainstSealRecord(final Path path, final ByteBuffer buffer, final int nextSequence)
+    {
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+        final String name = path.getFileName().toString();
+
+        if (header.limit() < R7fConstants.PREAMBLE_SIZE
+                || header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) != R7fConstants.SEAL_MAGIC)
+        {
+            // Renamed without being sealed, or written by a build that predates the seal
+            // record. The entries are still entries, so this is reported rather than acted
+            // on — but it means nothing here can be cross-checked.
+            integrity.onCorruptRegion(name, 0L, 0L, "sealed segment carries no seal record");
+            logger.warn("Segment {} has no seal record; its contents cannot be cross-checked.", name);
+            return;
+        }
+
+        final int recordedLast = header.getInt(R7fConstants.PREAMBLE_OFF_LAST_SEQUENCE);
+        final int decodedLast = nextSequence - 1;
+
+        if (decodedLast != recordedLast)
+        {
+            final int missing = recordedLast - decodedLast;
+            if (missing > 0)
+            {
+                totalMissingEntries += missing;
+                // Stated as the decoder states a gap: the sequence the reader was about to
+                // read, and the one it would have found on the far side. Passing the two
+                // last-sequence numbers instead made found < expected, so every consumer read
+                // a forward gap at the end of a segment as a backward jump — the one shape
+                // that means something entirely different (FORMAT.md §6). The arithmetic
+                // holds now: found - expected == missing, as at every other call site.
+                integrity.onEntriesMissing(name, 0L, decodedLast + 1, recordedLast + 1, missing);
+                logger.error("Segment {} says its last entry is #{} but the reader finished at #{} — "
+                        + "{} entries at the end of the segment were never read.", name, recordedLast, decodedLast, missing);
+            }
+            else
+            {
+                // More than the writer says it wrote: the seal record and the entries
+                // disagree in the direction that cannot happen by loss alone.
+                integrity.onCorruptRegion(name, 0L, 0L,
+                        "seal record says last entry #" + recordedLast + " but #" + decodedLast + " was decoded");
+                logger.error("Segment {} decoded past its recorded last entry (#{} > #{}).", name, decodedLast, recordedLast);
+            }
+        }
+    }
+
+    /**
+     * Whether the segment's seal record asks for it to be kept after it has been read.
+     * <p>
+     * Only recovery sets this, and only when its scan stopped on a sequence regression. The
+     * entries past Data End are structurally intact but not safe to replay, so recovery
+     * hides them from readers instead of destroying them — and this flag is how that decision
+     * survives the handover to a different process, which has no other way to know that the
+     * file holds more than it was shown.
+     */
+    private static boolean sealedForRetention(final ByteBuffer buffer)
+    {
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+        if (header.limit() < R7fConstants.PREAMBLE_SIZE
+                || header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC) != R7fConstants.SEAL_MAGIC)
+        {
+            return false;
+        }
+        return (header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_FLAGS) & R7fConstants.SEAL_FLAG_RETAIN) != 0;
+    }
+
+    /**
+     * Checks the preamble of a segment the tailer is about to read.
+     *
+     * @return null when the preamble is a supported r7f header, otherwise what is wrong
+     */
+    private static String preambleProblem(final ByteBuffer buffer)
+    {
+        if (buffer.limit() < R7fConstants.PREAMBLE_SIZE)
+        {
+            return "shorter than the preamble (" + buffer.limit() + " bytes)";
+        }
+
+        // The tailer reads the rest of the buffer little-endian for FlatBuffers; the
+        // preamble is big-endian like the rest of the framing.
+        final ByteBuffer header = buffer.duplicate().order(ByteOrder.BIG_ENDIAN);
+
+        final int magic = header.getInt(R7fConstants.PREAMBLE_OFF_MAGIC);
+        if (magic != R7fConstants.MAGIC)
+        {
+            return String.format("bad file magic 0x%08X (expected 0x%08X)", magic, R7fConstants.MAGIC);
+        }
+
+        final short version = header.getShort(R7fConstants.PREAMBLE_OFF_VERSION);
+        if (version != R7fConstants.CURRENT_VERSION)
+        {
+            // Quarantined by the caller, not decoded and not deleted (FORMAT.md 11).
+            return "unsupported format version " + version + " (this build reads version "
+                    + R7fConstants.CURRENT_VERSION + ")";
+        }
+
+        // The decoder finds block boundaries from this number, so a value it cannot use is a
+        // file it cannot read, said here rather than discovered mid-decode.
+        final int blockSize = header.getInt(R7fConstants.PREAMBLE_OFF_BLOCK_SIZE);
+        if (!R7fFraming.isValidBlockSize(blockSize))
+        {
+            return "invalid block size " + blockSize;
+        }
+
+        final short codec = header.getShort(R7fConstants.PREAMBLE_OFF_CODEC);
+        if (!R7fConstants.isKnownCodec(codec))
+        {
+            return "unsupported codec " + codec;
+        }
+
+        return null;
+    }
+
+    /**
+     * Sets aside a file the tailer cannot read, rather than decoding its bytes as whatever
+     * they resemble and then checkpointing it as processed. The file is left where it is
+     * (see {@link #QUARANTINED}); retention stays with whatever owns the journal directory.
+     */
+    private void quarantine(final Path path, final String key, final String reason)
+    {
+        final Checkpoint previous = checkpoints.put(key, new Checkpoint(QUARANTINED, JournalDecoder.UNKNOWN_SEQUENCE));
+        if (previous != null && previous.offset() == QUARANTINED)
+        {
+            return;
+        }
+        logger.error("Quarantined unreadable segment {}: {}. It is left in place and not read by this tailer.", path.getFileName(), reason);
+        integrity.onSegmentQuarantined(path.getFileName().toString(), reason);
+    }
+
+    private void logStats()
+    {
+        if (totalBytesRead > 0 && logger.isDebugEnabled())
+        {
+            logger.debug("Tailer Stats: Processed {}", DiskSpaceUtils.formatBytes(totalBytesRead));
+        }
+
+        if (totalMissingEntries > 0 || totalCorruptEntries > 0)
+        {
+            logger.error("Tailer Stats: {} entries missing and {} corrupt regions skipped this tick.",
+                    totalMissingEntries, totalCorruptEntries);
+        }
+
+        // An orphan is the visible half of an exchange whose start this tailer never saw. After a
+        // hard crash (SIGKILL, OOM kill) it is the only trace left of the exchanges that were in
+        // flight: their earlier entries were checkpointed as read and their assembled state died
+        // with the process. The reassembler logs an orphaned end at debug only, and a consumer
+        // is free to ignore the callback, so without this summary that loss went unreported.
+        final long orphanedEnds = reassembler.getOrphanedEndCount() - orphanedEndsBefore;
+        final long orphanedBodies = reassembler.getOrphanedBodyCount() - orphanedBodiesBefore;
+        if (orphanedEnds > 0 || orphanedBodies > 0)
+        {
+            logger.warn("Tailer Stats: {} exchange end(s) and {} body chunk(s) arrived this tick with no start event; "
+                            + "those exchanges are lost. Expected after an unclean tailer restart or when starting "
+                            + "mid-stream, suspicious otherwise.",
+                    orphanedEnds, orphanedBodies);
+        }
+    }
+
+    public long getMissingEntryCount()
+    {
+        return totalMissingEntries;
+    }
+
+    public long getCorruptEntryCount()
+    {
+        return totalCorruptEntries;
+    }
+
+    /**
+     * Parses a segment file name.
+     * <p>
+     * Active segments are named {@code shard-<shardId>-<createdEpochMillis>-<segmentSequence>.flux}.
+     * Sealing appends the observed time bounds:
+     * {@code shard-<shardId>-<createdEpochMillis>-<segmentSequence>-<firstTs>-<lastTs>.r7f},
+     * The two trailing fields are therefore only present once a segment has been sealed.
+     */
+    private FileMeta parseMeta(final Path path)
+    {
+        // Every tick parses each name several times over — once per comparison in the sort
+        // and once per stable key. The result cannot change while a tick runs, because a
+        // rename produces a different Path.
+        return metaCache.computeIfAbsent(path, this::parseMetaUncached);
+    }
+
+    private FileMeta parseMetaUncached(final Path path)
+    {
+        final String name = path.getFileName().toString()
+                .replace(ACTIVE_FILE_EXTENSION, "")
+                .replace(R7F_FILE_EXTENSION, "");
+        try
+        {
+            final String[] parts = name.split("-");
+            final int shardId = Integer.parseInt(parts[1]);
+            final long createdEpochMillis = Long.parseLong(parts[2]);
+            final long segmentSequence = Long.parseLong(parts[3]);
+            final long firstEventEpochMillis = parts.length > 4 ? Long.parseLong(parts[4]) : -1L;
+            final long lastEventEpochMillis = parts.length > 5 ? Long.parseLong(parts[5]) : -1L;
+
+            return new FileMeta(shardId, createdEpochMillis, segmentSequence, firstEventEpochMillis, lastEventEpochMillis);
+        }
+        catch (final RuntimeException e)
+        {
+            // Not warn: the file is not being ignored. It still goes through preamble
+            // validation and quarantine like any other, and a name this parser cannot read
+            // would otherwise log on every tick, for ever.
+            logger.debug("Unrecognized journal file name: {}", path.getFileName());
+            return UNPARSED;
+        }
+    }
+
+    /**
+     * Stands in for a name this parser could not read. The negative shard and sequence are
+     * what {@link #getStableKey} keys off: an unparsed file has no (shard, sequence)
+     * identity, and must not be given one that another file could also hold.
+     */
+    private static final FileMeta UNPARSED = new FileMeta(-1, 0L, -1L, -1L, -1L);
+
+    /**
+     * Identifies a segment across its whole life, active and sealed. The shard id and the
+     * monotonic segment sequence are the two fields that never change, so the checkpoint
+     * survives the rename.
+     */
+    private String getStableKey(final Path path)
+    {
+        final FileMeta meta = parseMeta(path);
+        if (meta.segmentSequence() < 0)
+        {
+            // Unreachable for anything this tailer processes: hasReadableIdentity sets such
+            // a file aside before it reaches the dedup map. Kept distinct per file name
+            // rather than collapsing every unparsed file onto one key, so that a future
+            // caller which does reach here cannot have two files share a checkpoint.
+            return "unparsed-" + path.getFileName();
+        }
+        return TailerProgress.segmentKey(meta.shardId(), (long) meta.segmentSequence());
+    }
+
+    private void loadCheckpoints()
+    {
+        if (!Files.exists(checkpointPath))
+        {
+            return;
+        }
+
+        try (final InputStream in = Files.newInputStream(checkpointPath))
+        {
+            final Properties props = new Properties();
+            props.load(in);
+            final List<String> problems = new ArrayList<>();
+            pendingReplay = OpenExchanges.read(props, problems);
+            problems.forEach(problem -> logger.warn("Discarding unparsable open-exchange record {}", problem));
+            props.forEach((k, v) -> {
+                final Checkpoint parsed = Checkpoint.parse((String) v);
+                if (parsed != null)
+                {
+                    checkpoints.put((String) k, parsed);
+                }
+                else
+                {
+                    logger.warn("Discarding unparsable checkpoint for {}", k);
+                }
+            });
+            logger.info("Restored {} stable checkpoints from {}", checkpoints.size(), checkpointPath.toAbsolutePath());
+            rememberSaved(pendingReplay);
+            if (!pendingReplay.isEmpty())
+            {
+                logger.info("{} exchange(s) were open at the last checkpoint and will be rebuilt",
+                        pendingReplay.values().stream().mapToInt(r -> r.requestIds().size()).sum());
+            }
+        }
+        catch (final IOException e)
+        {
+            logger.error("Load failed: {}", e.getMessage());
+        }
+    }
+
+    private void saveCheckpoints()
+    {
+        // Not yet replayed is still owed: written again until the first tick has rebuilt it.
+        final Map<Integer, OpenExchanges.Resume> resumePoints = new HashMap<>(pendingReplay);
+        resumePoints.putAll(open.resumePoints());
+        if (checkpoints.equals(savedCheckpoints) && resumePoints.equals(savedResumePoints))
+        {
+            return;
+        }
+
+        if (checkpoints.isEmpty() && resumePoints.isEmpty())
+        {
+            // Returning here would leave the previous file on disk with every entry it had
+            // — which is precisely the state that makes a reused segment sequence
+            // dangerous. Once the last segment for a key is gone (rotated away, or removed
+            // by whatever reaper owns retention) there is nothing left to resume, and a
+            // stale "journal-0-1 → offset 60000000" would be applied to whatever new segment
+            // takes that key next, skipping it or, if the offset is past its data, marking
+            // it fully read and reap-eligible unread.
+            try
+            {
+                Files.deleteIfExists(checkpointPath);
+                rememberSaved(resumePoints);
+            }
+            catch (final IOException e)
+            {
+                logger.error("Could not remove the obsolete checkpoint file {}: {}", checkpointPath, e.getMessage());
+            }
+            return;
+        }
+
+        final Path tempFile = checkpointPath.resolveSibling(CHECKPOINT_FILE + ".tmp");
+        try
+        {
+            final Properties props = new Properties();
+            checkpoints.forEach((k, v) -> props.setProperty(k, v.serialize()));
+            OpenExchanges.write(resumePoints, props);
+
+            try (final OutputStream out = Files.newOutputStream(tempFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))
+            {
+                props.store(out, "R7 Tailer Progress");
+            }
+            Files.move(tempFile, checkpointPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            rememberSaved(resumePoints);
+        }
+        catch (final IOException e)
+        {
+            logger.error("Save failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Whether something other than a read position changed since the last write: a segment
+     * appeared or was forgotten, or entered or left a state (read to the end, held back,
+     * quarantined). Those are what retention and a restart act on, and they are rare.
+     */
+    private boolean segmentStateChanged()
+    {
+        if (!checkpoints.keySet().equals(savedCheckpoints.keySet()))
+        {
+            return true;
+        }
+        for (final Map.Entry<String, Checkpoint> entry : checkpoints.entrySet())
+        {
+            final Checkpoint saved = savedCheckpoints.get(entry.getKey());
+            final long offset = entry.getValue().offset();
+            if (offset != saved.offset() && (offset < 0 || saved.offset() < 0))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void rememberSaved(final Map<Integer, OpenExchanges.Resume> resumePoints)
+    {
+        savedOnce = true;
+        lastSaveNanos = System.nanoTime();
+        savedCheckpoints = Map.copyOf(checkpoints);
+        savedResumePoints = Map.copyOf(resumePoints);
+    }
+
+    /**
+     * How far into a segment the tailer has read, and which entry sequence it expects
+     * next. Stored as {@code offset:sequence}; a bare offset is accepted so checkpoints
+     * written before sequence tracking still load.
+     */
+    private record Checkpoint(long offset, int nextSequence)
+    {
+        /**
+         * A segment nobody has read yet, starting at offset 0 — so the first entry it
+         * yields must be {@link R7fConstants#FIRST_ENTRY_SEQUENCE}, because entry
+         * sequences restart at 1 in every segment.
+         * <p>
+         * Using UNKNOWN_SEQUENCE here defeated the detection it was supposed to support:
+         * with no expectation, the first entry that survives becomes the baseline, so a
+         * segment whose opening entries never reached the device reads back as a shorter
+         * but perfectly consistent segment and nothing is reported missing. The loss is at
+         * the start of the file, which is exactly where a reader has the information to
+         * catch it and nowhere else to get it from.
+         */
+        static final Checkpoint START = new Checkpoint(0L, R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        static Checkpoint parse(final String value)
+        {
+            try
+            {
+                final int sep = value.indexOf(':');
+                if (sep < 0)
+                {
+                    // A bare offset, written before sequences were tracked. It may point
+                    // anywhere inside the segment, so in general there is no sequence to
+                    // expect — unlike START, which is known to begin at the first entry.
+                    //
+                    // Offset 0 is the exception: it means nothing has been read, so the
+                    // first entry must be #1 like any fresh segment. Treating it as unknown
+                    // gave away the one expectation the reader is entitled to, and — since
+                    // the value is re-serialised as "0:-1" — made the legacy carve-out
+                    // permanent rather than one-shot.
+                    final long legacyOffset = Long.parseLong(value.trim());
+                    return new Checkpoint(legacyOffset,
+                            legacyOffset == 0L ? R7fConstants.FIRST_ENTRY_SEQUENCE : JournalDecoder.UNKNOWN_SEQUENCE);
+                }
+                return new Checkpoint(
+                        Long.parseLong(value.substring(0, sep).trim()),
+                        Integer.parseInt(value.substring(sep + 1).trim()));
+            }
+            catch (final NumberFormatException e)
+            {
+                return null;
+            }
+        }
+
+        String serialize()
+        {
+            return offset + ":" + nextSequence;
+        }
+    }
+
+    private record FileMeta(int shardId,
+                            long createdEpochMillis,
+                            long segmentSequence,
+                            long firstEventEpochMillis,
+                            long lastEventEpochMillis)
+    {
+    }
+}

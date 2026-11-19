@@ -1,0 +1,75 @@
+version: unrouted-journal-test
+
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+    on_request:
+      # Reads the request: checked only on no_route.
+      - id: quiet-misses
+        match:
+          - PathPrefix:
+              prefix: /quiet
+        request:
+          level: NONE
+        response:
+          level: NONE
+      - id: trace-metadata
+        match:
+          - UnroutedReason:
+              include: [trace]
+        request:
+          level: METADATA
+
+routes:
+  # Journaled, for the upstream timings.
+  - id: timed
+    match:
+      - PathPrefix:
+          prefix: /timed
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+    journal:
+      request:
+        level: METADATA
+      response:
+        level: METADATA
+
+  # Journaled, behind an upstream that answers every request with 101 (WebSocketUpstream in
+  # UnroutedJournalTest). In a group, which the journal names as gateway.route.group.
+  - group: sockets
+    upstream:
+      targets:
+        - url: http://localhost:${WS_UPSTREAM_PORT}
+    routes:
+      - id: ws
+        match:
+          - PathPrefix:
+              prefix: /ws
+        journal:
+          request:
+            level: METADATA
+          response:
+            level: METADATA
+
+  - id: known
+    match:
+      - PathPrefix:
+          prefix: /known
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # Catastrophic on an X-Evil header, and cheap for every request without one: exhausting the
+  # regex budget while matching is a refusal before routing.
+  - id: evil
+    match:
+      - MatchRequestHeader:
+          name: X-Evil
+          regexp: "^(.*a){12}$"
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

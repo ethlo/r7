@@ -1,0 +1,16 @@
+version: journal-request-upgrade-test
+
+journal:
+  request:
+    level: FULL
+  response:
+    level: METADATA
+
+routes:
+  - id: proxied
+    match:
+      - PathPrefix:
+          prefix: /proxied
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

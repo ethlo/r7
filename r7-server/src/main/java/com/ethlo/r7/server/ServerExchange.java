@@ -1,0 +1,502 @@
+package com.ethlo.r7.server;
+
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
+
+import com.ethlo.r7.api.ClientRequestGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.CompletedGatewayExchange;
+import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.api.GatewayResponse;
+import com.ethlo.r7.api.GatewayRouteInfo;
+import com.ethlo.r7.api.MutableGatewayAttributes;
+import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.api.MutableGatewayRequest;
+import com.ethlo.r7.api.MutableGatewayResponse;
+import com.ethlo.r7.api.ShortCircuitGatewayResponse;
+import com.ethlo.r7.api.UpstreamOutcome;
+import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.condition.ConditionInput;
+import com.ethlo.r7.condition.Draw;
+import com.ethlo.r7.condition.Leg;
+import com.ethlo.r7.condition.UnroutedReason;
+import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.filters.StaticContentFactory;
+import com.ethlo.r7.journal.StatefulJournal;
+import com.ethlo.r7.status.TrafficMetrics;
+
+/**
+ * One request, as the pipeline sees it: the exchange handed to every filter, the pipeline's
+ * bookkeeping for it, and the handful of things only the HTTP server can do.
+ * <p>
+ * A server implements this once, as its own per-request object - one object, not an adapter
+ * wrapping another, because what layering costs on the request path is objects, not calls: with
+ * one server loaded, every abstract method here has one implementation and the JIT inlines it.
+ * The pipeline's state is plain fields for the same reason; there is no side object holding it.
+ * <p>
+ * The hooks fall into three groups: the request as the server parsed it; answering, teeing and
+ * proxying; and the two listener registrations through which the server hands the exchange back
+ * to the pipeline when the response commits and when the exchange completes. Request hygiene -
+ * framing, hop-by-hop and forwarding headers, the client address - is the pipeline's, applied to
+ * what the server exposes here, so every server gets the same checks.
+ */
+public abstract class ServerExchange implements ConditionInput, ClientRequestGatewayExchange, UpstreamRequestGatewayExchange, ClientResponseGatewayExchange, CompletedGatewayExchange
+{
+    /**
+     * An upstream timing not taken. {@link System#nanoTime()} can return any value, but this one
+     * would need a clock origin about 292 years back.
+     */
+    static final long NOT_RECORDED = Long.MIN_VALUE;
+
+    private final GatewayPipeline pipeline;
+
+    // Set by GatewayPipeline.open(), once a route is chosen (or the unrouted section is used).
+    String requestId;
+    DefaultGatewayRoute route;
+    // The route whose response and completed filters run: route, or the fallback it handed to.
+    DefaultGatewayRoute responseRoute;
+    GatewayRequest clientRequest;
+    MutableGatewayResponse clientResponse;
+    MutableGatewayAttributes attributes;
+    StatefulJournal journal;
+
+    // Who the request is attributed to, and whether its peer may make forwarding claims.
+    RemoteAddressResolver.RemoteInfo remote;
+    // The live request: what the predicates match, the filters change and the proxy forwards.
+    MutableGatewayRequest liveRequest;
+    MutableGatewayRequest upstreamRequest;
+    GatewayResponse upstreamResponse;
+
+    ShortCircuitGatewayResponse shortCircuitResponse;
+    GatewayFilter reasonFilter;
+    boolean webSocketRequested;
+    boolean webSocketUpgraded;
+    // System.nanoTime() when the proxy started, when the upstream's response head was read, and
+    // when its response was read to the end; NOT_RECORDED until then. Converted to epoch time
+    // when journaled, all against one reading of both clocks.
+    long proxyStartNanos = NOT_RECORDED;
+    long upstreamHeadNanos = NOT_RECORDED;
+    long upstreamEndNanos = NOT_RECORDED;
+    // Whether an upstream sent a response head. Not wasProxied(): a proxied exchange the upstream
+    // never answered is committed with r7's own 502, 503 or 504, and that must not be recorded,
+    // matched or counted as something the upstream sent. Set when the head is read, not when it
+    // commits: a head r7 then refuses (a 101 it cannot tunnel) is still the upstream's answer.
+    boolean upstreamResponded;
+    // Whether the response committing is that head, relayed. If not, r7 answers in its place,
+    // and the upstream response is taken from the head as read instead.
+    boolean upstreamResponseRelayed;
+    // Whether a write to the client failed while the upstream's response was being relayed: the
+    // client went away, which says nothing about the upstream.
+    boolean clientAborted;
+    // Whether the proxy failed in a way the upstream caused, recorded when it happens: the status
+    // the client finally gets can be rewritten by a response filter, so it cannot tell.
+    boolean upstreamFailed;
+    boolean upstreamBodyFailed;
+    long journalBytes;
+    // The draws the Samples of this exchange test, one per decision; NaN until the first asks.
+    private double routingDraw = Double.NaN;
+    private double journalDraw = Double.NaN;
+    // Why the request was refused before routing; null for a routed request.
+    UnroutedReason unroutedReason;
+
+    protected ServerExchange(final GatewayPipeline pipeline)
+    {
+        this.pipeline = pipeline;
+    }
+
+    public final GatewayPipeline pipeline()
+    {
+        return this.pipeline;
+    }
+
+    /**
+     * Who the request is attributed to. Set before {@link #openLiveRequest()} is called.
+     */
+    protected final RemoteAddressResolver.RemoteInfo remoteInfo()
+    {
+        return this.remote;
+    }
+
+    // --- The request as the server parsed it -------------------------------------------------
+
+    /**
+     * The request method, before any filter has changed it.
+     */
+    protected abstract String method();
+
+    /**
+     * The request path as the server decoded it, which is what route predicates match against.
+     */
+    protected abstract String decodedPath();
+
+    /**
+     * The request path as the client sent it, still encoded: the same instance the upstream
+     * request's {@code uri()} starts as, so a different one means a filter changed the target.
+     */
+    protected abstract String rawPath();
+
+    /**
+     * When the server started reading this request, on the {@link System#nanoTime()} clock.
+     */
+    protected abstract long requestStartNanos();
+
+    /**
+     * The live request headers: what the proxy will copy upstream. Names must match ignoring
+     * case. The pipeline checks their framing and removes hop-by-hop and untrusted forwarding
+     * headers from them before any filter runs.
+     */
+    protected abstract MutableGatewayHeaders requestHeaders();
+
+    /**
+     * The address of the connection's immediate peer, or {@code null} if the server does not
+     * know it.
+     */
+    protected abstract InetSocketAddress peerAddress();
+
+    /**
+     * The live request, attributed to {@link #remoteInfo()}. Called once per exchange, before
+     * routing.
+     */
+    protected abstract MutableGatewayRequest openLiveRequest();
+
+    /**
+     * An immutable copy of the request as it arrived, for filters and the journal, attributed to
+     * {@link #remoteInfo()}. Taken before the pipeline sanitises the live headers.
+     */
+    protected abstract GatewayRequest snapshotClientRequest();
+
+    /**
+     * The response as the server will send it: status and headers are read and written live.
+     */
+    protected abstract MutableGatewayResponse openClientResponse();
+
+    /**
+     * An immutable copy of the response headers and status as they are now; called when the
+     * upstream's response commits, once {@link #upstreamResponseCommitting()} has been called.
+     */
+    protected abstract GatewayResponse snapshotResponse();
+
+    /**
+     * The upstream's response head as read, for an upstream response that was not relayed; called
+     * when r7's own answer commits after {@link #upstreamResponseHeadRead()}.
+     */
+    protected abstract GatewayResponse upstreamResponseAsRead();
+
+    /**
+     * The request line the relay last wrote to a target, or null when it wrote none; called when
+     * the exchange is journaled.
+     */
+    protected abstract ByteBuffer upstreamRequestLineAsSent();
+
+    /**
+     * The headers the relay last wrote to a target, Host, X-Forwarded-* and framing included, or
+     * null when it wrote none; called when the exchange is journaled with headers.
+     */
+    protected abstract GatewayHeaders upstreamRequestHeadersAsSent();
+
+    // --- Answering, teeing, proxying ---------------------------------------------------------
+
+    /**
+     * Sends {@code body} as the whole response body; status and headers are already on
+     * {@link #clientResponse()}.
+     */
+    protected abstract void sendBody(ByteBuffer body);
+
+    /**
+     * Serves a file for a static content route; headers set so far stay.
+     */
+    protected abstract void serveStatic(StaticContentFactory.StaticServeRequest request);
+
+    /**
+     * Stops the connection being reused once this response is sent.
+     */
+    protected abstract void closeConnectionAfterResponse();
+
+    /**
+     * Passes every chunk of the request body, as it is read, to {@code sink}.
+     */
+    protected abstract void teeRequestBody(Consumer<ByteBuffer> sink);
+
+    /**
+     * Passes every chunk of the response body, as it is written, to {@code sink}.
+     */
+    protected abstract void teeResponseBody(Consumer<ByteBuffer> sink);
+
+    /**
+     * Hands the request to {@code upstream}. The server calls back through the listeners
+     * registered by {@link #listenForCommit()} and {@link #listenForCompletion()}.
+     */
+    protected abstract void proxy(UpstreamHandle upstream) throws Exception;
+
+    /**
+     * The upstream targets tried for this request, in order; empty if none was.
+     */
+    protected abstract String[] attemptedUpstreams();
+
+    /**
+     * Runs {@code listener} when the client connection closes; for an upgraded websocket, that is
+     * when the exchange really ends.
+     */
+    public abstract void onConnectionClose(Runnable listener);
+
+    /**
+     * Byte counts for the request and response as sent on the wire.
+     */
+    public abstract TrafficMetrics trafficMetrics();
+
+    // --- Listener registration ---------------------------------------------------------------
+
+    /**
+     * Makes the server call {@link GatewayPipeline#onResponseCommit(ServerExchange)} when the
+     * response is about to commit.
+     */
+    protected abstract void listenForCommit();
+
+    /**
+     * Makes the server call {@link GatewayPipeline#completeJournal(ServerExchange)} and then
+     * {@link GatewayPipeline#runCompletedFilters(ServerExchange)} when the exchange completes.
+     */
+    protected abstract void listenForCompletion();
+
+    // --- The filter-facing exchange ----------------------------------------------------------
+
+    @Override
+    public String requestId()
+    {
+        return this.requestId;
+    }
+
+    @Override
+    public GatewayRequest clientRequest()
+    {
+        return this.clientRequest;
+    }
+
+    @Override
+    public MutableGatewayRequest upstreamRequest()
+    {
+        return this.upstreamRequest;
+    }
+
+    @Override
+    public GatewayResponse upstreamResponse()
+    {
+        return this.upstreamResponse;
+    }
+
+    @Override
+    public MutableGatewayResponse clientResponse()
+    {
+        return this.clientResponse;
+    }
+
+    @Override
+    public MutableGatewayAttributes attributes()
+    {
+        return this.attributes;
+    }
+
+    @Override
+    public GatewayRouteInfo route()
+    {
+        final DefaultGatewayRoute r = this.route;
+        return new GatewayRouteInfo()
+        {
+            @Override
+            public String id()
+            {
+                return r.id();
+            }
+
+            @Override
+            public String toString()
+            {
+                return r.uri().toString();
+            }
+        };
+    }
+
+    @Override
+    public void shortCircuit(final ShortCircuitGatewayResponse response)
+    {
+        this.shortCircuitResponse = response;
+    }
+
+    @Override
+    public boolean isShortCircuited()
+    {
+        return this.shortCircuitResponse != null;
+    }
+
+    @Override
+    public boolean wasProxied()
+    {
+        return this.proxyStartNanos != NOT_RECORDED;
+    }
+
+    // --- What conditions test ---------------------------------------------------------------
+
+    @Override
+    public GatewayRequest request()
+    {
+        // Before open() the snapshot is not taken yet; when a route is chosen the live
+        // request is still the client's, unchanged.
+        return this.clientRequest != null ? this.clientRequest : this.liveRequest;
+    }
+
+    @Override
+    public GatewayResponse response(final Leg leg)
+    {
+        if (leg == Leg.CLIENT)
+        {
+            return this.clientResponse;
+        }
+        return this.upstreamHeadNanos != NOT_RECORDED ? this.upstreamResponse : null;
+    }
+
+    @Override
+    public double sampleDraw(final Draw draw)
+    {
+        if (draw == Draw.ROUTING)
+        {
+            if (Double.isNaN(this.routingDraw))
+            {
+                this.routingDraw = ThreadLocalRandom.current().nextDouble();
+            }
+            return this.routingDraw;
+        }
+        if (Double.isNaN(this.journalDraw))
+        {
+            this.journalDraw = ThreadLocalRandom.current().nextDouble();
+        }
+        return this.journalDraw;
+    }
+
+    @Override
+    public UnroutedReason unroutedReason()
+    {
+        return this.unroutedReason;
+    }
+
+    // --- For metrics ------------------------------------------------------------------------
+
+    /**
+     * Whether the upstream actually answered {@code 101 Switching Protocols} for this exchange,
+     * not merely whether the client asked to upgrade. False until the response commits, and for an
+     * exchange with no upstream at all.
+     */
+    public boolean isWebsocketUpgraded()
+    {
+        return this.webSocketUpgraded;
+    }
+
+    public long getJournalBytes()
+    {
+        return this.journalBytes;
+    }
+
+    public long getDurationNanos()
+    {
+        return System.nanoTime() - requestStartNanos();
+    }
+
+    /**
+     * Marks that the upstream's response head has been read; from here on the exchange has an
+     * upstream response, whether or not it reaches the client.
+     */
+    protected final void upstreamResponseHeadRead()
+    {
+        this.upstreamHeadNanos = System.nanoTime();
+        this.upstreamResponded = true;
+    }
+
+    /**
+     * Marks that the response about to commit is the upstream's: its status and headers, as
+     * relayed, are on {@link #clientResponse()}. Called before the commit, and never for a
+     * response r7 answers itself, a proxy failure's 502, 503 or 504 included.
+     */
+    protected final void upstreamResponseCommitting()
+    {
+        this.upstreamResponseRelayed = true;
+    }
+
+    /**
+     * Whether an upstream sent this exchange a response head, relayed or not. False for an
+     * exchange that was not proxied, and for one the upstream never answered (a refused connect,
+     * a timeout or a protocol error before a response head), whose response is r7's own.
+     */
+    public boolean hasUpstreamResponse()
+    {
+        return this.upstreamResponded;
+    }
+
+    /**
+     * Marks that the client could not be written to while the upstream's response was relayed.
+     */
+    protected final void clientAbortedResponse()
+    {
+        this.clientAborted = true;
+    }
+
+    protected final void upstreamFailedToAnswer()
+    {
+        this.upstreamFailed = true;
+    }
+
+    protected final void upstreamBodyReadFailed()
+    {
+        this.upstreamBodyFailed = true;
+    }
+
+    @Override
+    public UpstreamOutcome upstreamOutcome()
+    {
+        if (!wasProxied())
+        {
+            return UpstreamOutcome.NOT_ASKED;
+        }
+        if (!this.upstreamResponded)
+        {
+            // r7's own answer in the upstream's place: only a failure the upstream caused counts
+            // against it, not the client's own fault (400, 413) or a local limit.
+            return this.upstreamFailed ? UpstreamOutcome.NO_RESPONSE : UpstreamOutcome.NOT_ASKED;
+        }
+        final long headNanos = this.upstreamHeadNanos - this.proxyStartNanos;
+        if (this.webSocketUpgraded || this.upstreamEndNanos != NOT_RECORDED)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.ANSWERED, headNanos);
+        }
+        if (this.clientAborted)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.CLIENT_ABORTED, headNanos);
+        }
+        if (this.upstreamBodyFailed)
+        {
+            return new UpstreamOutcome(UpstreamOutcome.Kind.BODY_FAILED, headNanos);
+        }
+        // A protocol error after the head (an unsolicited 101) is the upstream's failure; with no
+        // recorded cause, a head with no end is r7's own refusal (a 101 it cannot tunnel).
+        return new UpstreamOutcome(this.upstreamFailed ? UpstreamOutcome.Kind.NO_RESPONSE : UpstreamOutcome.Kind.NOT_ASKED, headNanos);
+    }
+
+    /**
+     * Marks that the upstream's response has been read to its end.
+     */
+    protected final void upstreamResponseEndRead()
+    {
+        this.upstreamEndNanos = System.nanoTime();
+    }
+
+    /**
+     * A {@link System#nanoTime()} reading as epoch nanoseconds, given one moment read on both
+     * clocks; -1, the journal's "not recorded", for {@link #NOT_RECORDED}.
+     */
+    static long toEpochNanos(final long nanos, final long epochNow, final long nanoNow)
+    {
+        return nanos == NOT_RECORDED ? -1 : epochNow - (nanoNow - nanos);
+    }
+}

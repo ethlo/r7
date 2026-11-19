@@ -1,0 +1,27 @@
+name: Prune Old GHCR Images
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+# Nothing by default: each job grants only the permissions it needs.
+permissions: {}
+
+jobs:
+  clean-ghcr:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      # Only untagged versions: the builds :main has moved past. Release images keep their
+      # version tag and are never selected. The action leaves alone the untagged per-platform
+      # manifests that a tagged multi-arch image still points at.
+      - name: Delete superseded images
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
+        with:
+          image-names: r7-gateway r7-tailer r7-reaper
+          tag-selection: untagged
+          cut-off: 3 days
+          account: user
+          token: ${{ secrets.GITHUB_TOKEN }}

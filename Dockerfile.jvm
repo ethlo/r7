@@ -1,0 +1,73 @@
+# Dockerfile.jvm
+
+# distroless has no shell, so a directory can't be chown'd in the final stage - prepare it here
+# instead. Docker copies an image's pre-existing directory (including ownership) into a *named*
+# volume the first time that volume is created empty, so this is what makes a freshly created
+# r7-journals volume writable by the nonroot user below instead of root:root.
+FROM busybox:stable@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662 AS dirs
+RUN mkdir -p /journals && chown 65532:65532 /journals
+
+# The Java 27 runtime: Temurin's JRE on distroless's Java base (the libraries its javaNN images
+# add to the base image), which is how distroless builds those images. Distroless publishes them
+# for LTS releases only, so the image is assembled here.
+FROM eclipse-temurin:27-jre@sha256:387922dd341a11a06f39375e6b13f3cb865e09aa409789cd4f7a5a6577cd2290 AS jre
+FROM gcr.io/distroless/java-base-debian13:nonroot@sha256:380a3d6a0f019235e129b19243f40c197d3713fd2ee992f6faece270a400df65 AS runtime
+COPY --from=jre /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# The AOT cache (JEP 483): a training run of the gateway records the classes it loads and links
+# while starting and serving its first requests, and the image starts from that record instead of
+# loading them from the jars again. The cache only fits the exact JDK, jars and flags it was made
+# with, so it is made here, in the same base image, with the same java flags as the entrypoint
+# below; a JVM that finds it does not fit says so and starts without it. Training writes journals,
+# so it runs in a stage of its own and only the cache is kept.
+FROM runtime AS aot
+WORKDIR /app
+
+# We assume the jar and its lib/ are already built by the CI runner. The pattern skips the
+# -javadoc and -sources jars beside it.
+COPY r7-helidon/target/r7-helidon-*[0-9T].jar /app/r7.jar
+COPY r7-helidon/target/lib /app/lib
+COPY docker/aot-training/routes.yaml /aot-training/routes.yaml
+ENV R7_ROUTES_CONFIG=/aot-training/routes.yaml
+ENV R7_JOURNAL_DIR=/tmp/aot-training-journals
+# The gateway does not start without a fingerprint key. This one only fingerprints the training
+# requests, in this stage; the image does not carry it, and every deployment sets its own.
+ENV R7_FINGERPRINT_KEY=aot-training-only-fingerprint-key-not-in-the-image
+RUN ["/opt/java/openjdk/bin/java", "-XX:AOTCacheOutput=/tmp/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-Dr7.aot.training=true", "-jar", "/app/r7.jar"]
+
+FROM runtime
+WORKDIR /app
+
+# From the training stage, not the build context, so that they are the very files the cache was
+# made from
+COPY --from=aot /app/r7.jar /app/r7.jar
+COPY --from=aot /app/lib /app/lib
+COPY --from=aot /tmp/r7.aot /app/r7.aot
+COPY --from=dirs --chown=65532:65532 /journals /journals
+
+USER 65532:65532
+# Config files are read from the working directory; containers keep them in /app/config, the
+# directory the docs mount. A named R7_ROUTES_CONFIG or R7_SERVER_CONFIG still wins.
+WORKDIR /app/config
+
+# The management endpoint binds to loopback by default; inside a container that would make the
+# published status port unreachable, so listen on all interfaces and let the port mapping decide
+# who can reach it - publish it on loopback (127.0.0.1:19999:18888), not on every host interface.
+# Set management.host in server.yaml to override.
+ENV R7_MANAGEMENT_HOST=0.0.0.0
+# Journals go to /journals, the directory prepared above for this user and the mount point the
+# docs use; without it a container started with no server.yaml tries to create /app/journals,
+# which this user cannot, and dies at startup. storage.work_dir in server.yaml overrides it.
+ENV R7_JOURNAL_DIR=/journals
+# Extension jars: mount them under /app/plugins, directly or one directory per plugin
+# (docs/extensibility.md). The gateway finds them itself, so the entrypoint stays -jar and the AOT
+# cache is trained and used exactly as it is without plugins.
+ENV R7_PLUGINS_DIR=/app/plugins
+# Native and Unsafe memory access are granted up front so the JVM prints no warnings about them.
+# No garbage collector is named: the JVM picks one for the container's CPUs and memory, and one
+# set in JAVA_TOOL_OPTIONS (-XX:+UseZGC for the shortest pauses) applies as it is. ZGC cannot use
+# the AOT cache, which is made with compressed object pointers, so with it the gateway starts
+# without the cache and slower (docs/performance_tuning.md).
+ENTRYPOINT ["/opt/java/openjdk/bin/java", "-XX:AOTCache=/app/r7.aot", "--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/r7.jar"]

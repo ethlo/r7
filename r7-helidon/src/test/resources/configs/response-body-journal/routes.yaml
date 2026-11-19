@@ -1,0 +1,17 @@
+version: response-body-journal-test
+
+routes:
+  # Response bodies kept, request bodies not: the request records are held back until the
+  # exchange completes, while the response body streams into the journal before that.
+  - id: payloads
+    match:
+      - PathPrefix:
+          prefix: /payload
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: FULL
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

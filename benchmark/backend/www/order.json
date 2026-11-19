@@ -1,0 +1,113 @@
+{
+  "id": "ord_01J9Z3K7Q4M2X8B6N5T1R0VWYC",
+  "status": "confirmed",
+  "createdAt": "2026-10-11T08:14:22Z",
+  "updatedAt": "2026-10-11T08:15:03Z",
+  "customer": {
+    "id": "cus_01J9Z2V4H8P6D3F1K7M5Q9S2TA",
+    "name": "Kari Nordmann",
+    "email": "kari.nordmann@example.com"
+  },
+  "shipping": {
+    "method": "standard",
+    "address": {
+      "line1": "Storgata 1",
+      "postalCode": "0155",
+      "city": "Oslo",
+      "country": "NO"
+    }
+  },
+  "items": [
+    {
+      "sku": "SKU-000001",
+      "name": "Item 1",
+      "qty": 2,
+      "unitPrice": {
+        "amount": 137,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000002",
+      "name": "Item 2",
+      "qty": 3,
+      "unitPrice": {
+        "amount": 174,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000003",
+      "name": "Item 3",
+      "qty": 1,
+      "unitPrice": {
+        "amount": 211,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000004",
+      "name": "Item 4",
+      "qty": 2,
+      "unitPrice": {
+        "amount": 248,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000005",
+      "name": "Item 5",
+      "qty": 3,
+      "unitPrice": {
+        "amount": 285,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000006",
+      "name": "Item 6",
+      "qty": 1,
+      "unitPrice": {
+        "amount": 322,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000007",
+      "name": "Item 7",
+      "qty": 2,
+      "unitPrice": {
+        "amount": 359,
+        "currency": "NOK"
+      }
+    },
+    {
+      "sku": "SKU-000008",
+      "name": "Item 8",
+      "qty": 3,
+      "unitPrice": {
+        "amount": 396,
+        "currency": "NOK"
+      }
+    }
+  ],
+  "totals": {
+    "subtotal": {
+      "amount": 4586,
+      "currency": "NOK"
+    },
+    "vat": {
+      "amount": 1146,
+      "currency": "NOK"
+    },
+    "total": {
+      "amount": 5732,
+      "currency": "NOK"
+    }
+  },
+  "links": {
+    "self": "/api/v1/orders/1234",
+    "customer": "/api/v1/customers/cus_01J9Z2V4H8P6D3F1K7M5Q9S2TA",
+    "invoice": "/api/v1/invoices/inv_01J9Z3M1"
+  }
+}

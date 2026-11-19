@@ -1,0 +1,31 @@
+services:
+  r7-gateway:
+    image: ghcr.io/ethlo/r7-gateway:main #ethlo-r7:latest
+    container_name: ethlo-r7-gateway
+    ports:
+      - "9999:8888"
+      # The management port is unauthenticated and shows the gateway's configuration. The image
+      # listens on all interfaces inside the container, so this mapping is what limits who can
+      # reach it: keep it on loopback (a bare "19999:18888" publishes it on every host interface,
+      # past host firewalls such as ufw).
+      - "127.0.0.1:19999:18888"
+    environment:
+      # The key behind every fingerprint in the journal, unless config/server.yaml sets
+      # fingerprint_key; the gateway refuses to start with neither. Generate it once with
+      # `(umask 077; set -C; echo "R7_FINGERPRINT_KEY=$(openssl rand -base64 32)" > .env)` and keep it.
+      R7_FINGERPRINT_KEY: ${R7_FINGERPRINT_KEY:-}
+    volumes:
+      - ./config:/app/config:ro
+      - ./journals:/journals:rw
+    deploy:
+      resources:
+        limits:
+          memory: 600M
+          cpus: 16
+        reservations:
+          memory: 400M
+
+    # No healthcheck: the image is distroless, with no shell, curl or wget for one to run. Probe
+    # the gateway port from outside instead (a TCP connect to 8888, or the orchestrator's check).
+
+    restart: unless-stopped

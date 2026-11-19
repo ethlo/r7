@@ -1,0 +1,666 @@
+package com.ethlo.r7.r7f;
+
+import java.net.InetAddress;
+import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ethlo.r7.api.GatewayAttributes;
+import com.ethlo.r7.api.GatewayHeaders;
+import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
+import com.ethlo.r7.journal.api.ExchangeCompletionListener;
+import com.ethlo.r7.journal.api.ExchangeCompletionListener.BodyKind;
+import com.ethlo.r7.journal.api.ExchangeCompletionListener.IncompleteReason;
+import com.ethlo.r7.journal.api.JournalExchange;
+import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.journal.api.JournalIntegrityListener;
+import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.r7f.fbs.HeaderDelta;
+import com.ethlo.r7.r7f.util.StringExchangeMap;
+import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.PackedGatewayHeaders;
+
+/**
+ * Rebuilds whole exchanges from the interleaved event stream.
+ * <p>
+ * Exchanges are held in memory until their EndExchange event arrives. An exchange whose
+ * end never arrives — because the segment holding it was lost, or the writer stopped
+ * mid-exchange — would otherwise be held forever, so incomplete exchanges are aged out
+ * and counted rather than accumulating.
+ */
+public class ExchangeReassembler implements JournalEventListener
+{
+    private static final Logger logger = LoggerFactory.getLogger(ExchangeReassembler.class);
+
+    private final StringExchangeMap inFlight = new StringExchangeMap(10_000);
+
+    /**
+     * Exchanges whose end event arrived and whose delivery the consumer refused, held until
+     * that end entry is accepted.
+     * <p>
+     * Deliberately not in {@link #inFlight}. Putting the exchange back there made it visible
+     * to the age sweep, and a stall is unbounded by design while {@code maxAge} is five
+     * minutes — so an outage that lasted longer than the age limit evicted the very state the
+     * retry depends on. The next attempt then found nothing to attach the end event to,
+     * reported an orphan, and let the segment be checkpointed and deleted: the exact loss the
+     * stall exists to prevent, on a timer.
+     * <p>
+     * These are not in flight. Nothing further is coming for them — they are complete records
+     * waiting on a consumer, so neither ageing them out nor counting them against the
+     * in-flight ceiling means anything. The bound is the number of stalled segments, because
+     * a stall stops its segment, and each stalled segment is itself being held on disk.
+     */
+    private final Map<String, JournalExchange> awaitingRedelivery = new HashMap<>();
+    private final ExchangeCompletionListener output;
+    private final JournalIntegrityListener integrity;
+    private final ReassemblyOptions options;
+    private final long maxAgeNanos;
+
+    private final AtomicLong completed = new AtomicLong();
+    private final AtomicLong incompleteEnds = new AtomicLong();
+    private final AtomicLong abandoned = new AtomicLong();
+    private final AtomicLong orphanedEnds = new AtomicLong();
+    private final AtomicLong orphanedBodies = new AtomicLong();
+    private final AtomicLong checksumMismatches = new AtomicLong();
+
+    private int eventsSinceSweep;
+
+    public ExchangeReassembler(ExchangeCompletionListener output)
+    {
+        this(output, ReassemblyOptions.DEFAULTS);
+    }
+
+    public ExchangeReassembler(ExchangeCompletionListener output, ReassemblyOptions options)
+    {
+        this(output, options, JournalIntegrityListener.NOOP);
+    }
+
+    public ExchangeReassembler(ExchangeCompletionListener output, ReassemblyOptions options, JournalIntegrityListener integrity)
+    {
+        this.output = output;
+        this.options = options;
+        this.integrity = integrity;
+        this.maxAgeNanos = options.maxAge().toNanos();
+    }
+
+    public ReassemblyOptions getOptions()
+    {
+        return options;
+    }
+
+    @Override
+    public void onClientRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, InetAddress remoteAddress, IpSource ipSource)
+    {
+        getOrCreate(reqId).setClientRequest(startLine, level, copyOf(headers), remoteAddress, ipSource);
+    }
+
+    @Override
+    public void onUpstreamRequest(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, HeaderDelta delta)
+    {
+        final JournalExchange exchange = getOrCreate(reqId);
+        final GatewayHeaders base = exchange.getClientRequestHeaders();
+        final GatewayHeaders resolved = resolve(reqId, "upstream request", headers, delta, base);
+        exchange.setUpstreamRequest(startLine, level, shareIfIdentical(copyOf(resolved), base));
+    }
+
+    @Override
+    public void onUpstreamResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, boolean relayed)
+    {
+        getOrCreate(reqId).setUpstreamResponse(startLine, level, copyOf(headers), relayed);
+    }
+
+    @Override
+    public void onClientResponse(String reqId, JournalLevel level, String startLine, GatewayHeaders headers, HeaderDelta delta)
+    {
+        final JournalExchange exchange = getOrCreate(reqId);
+        final GatewayHeaders base = exchange.getUpstreamResponseHeaders();
+        final GatewayHeaders resolved = resolve(reqId, "client response", headers, delta, base);
+        exchange.setClientResponse(startLine, level, shareIfIdentical(copyOf(resolved), base));
+    }
+
+    @Override
+    public void onRequestBody(String reqId, ByteBuffer bodyChunk)
+    {
+        final JournalExchange exchange = inFlight.get(reqId);
+        if (validateExchangeExists(exchange, reqId, BodyKind.REQUEST))
+        {
+            // The checksum is accumulated on the exchange itself, so interleaved
+            // exchanges cannot contaminate each other's value.
+            exchange.appendRequestBody(bodyChunk);
+        }
+        // Body events are events. They reach the exchange directly rather than through
+        // getOrCreate, which is where every other event type ticks the sweep counter — so
+        // sweepIntervalEvents was counting non-body events only, and a stream of large
+        // uploads swept an order of magnitude less often than its configuration said.
+        maybeSweep();
+    }
+
+    @Override
+    public void onResponseBody(String reqId, ByteBuffer bodyChunk)
+    {
+        final JournalExchange exchange = inFlight.get(reqId);
+        if (validateExchangeExists(exchange, reqId, BodyKind.RESPONSE))
+        {
+            exchange.appendResponseBody(bodyChunk);
+        }
+        maybeSweep();
+    }
+
+    @Override
+    public void onEnd(String reqId, GatewayAttributes attributes,
+                      long clientStartTs, long clientEndTs,
+                      int status,
+                      long requestHeaderBytes, long requestBodyBytes, long responseHeaderBytes, long responseBodyBytes,
+                      long proxyStartTs, long proxyFirstByteReceivedTs, long proxyEndTs,
+                      final BodyChecksum requestChecksum, final BodyChecksum responseChecksum, final boolean requestBodyTruncated, final boolean responseBodyTruncated)
+    {
+        // A refused delivery is retried whole, so an exchange held for redelivery answers
+        // first: it is this exchange, fully assembled, and the copy in the map (if a later
+        // event recreated the id) is not.
+        JournalExchange exchange = awaitingRedelivery.remove(reqId);
+        if (exchange == null)
+        {
+            exchange = inFlight.remove(reqId);
+        }
+
+        if (exchange == null)
+        {
+            // Expected during shard boundaries or tailer startup.
+            //
+            // Counted after the call, like every other consumer callback here: a refusal
+            // gets the entry offered again, and a counter bumped per attempt measures
+            // delivery attempts rather than orphaned ends.
+            output.onOrphanedEnd(reqId);
+            orphanedEnds.incrementAndGet();
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("Received END for {} but no metadata exists. Skipping orphan.", reqId);
+            }
+            return;
+        }
+
+        // Apply final metrics and forensic checksums
+        exchange.setTiming(clientStartTs, clientEndTs, proxyStartTs, proxyFirstByteReceivedTs, proxyEndTs);
+        exchange.setTraffic(requestHeaderBytes, requestBodyBytes, responseHeaderBytes, responseBodyBytes);
+        exchange.setAttributes(copyOf(attributes));
+        exchange.setStatus(status);
+        exchange.setJournalChecksums(requestChecksum, responseChecksum);
+        exchange.setBodyTruncated(requestBodyTruncated, responseBodyTruncated);
+
+        try
+        {
+            // Inside the guard, not before it. Verification reports through
+            // output.onChecksumMismatch, which is consumer code like any other — and a
+            // consumer that throws from it was refusing the entry while this method had
+            // already taken the exchange out of the map, so the decoder's rewind produced an
+            // orphaned end on the retry and lost every fragment gathered before it. The rule
+            // is not "guard the delivery call"; it is that nothing which can reach the
+            // consumer may run outside the region that puts the exchange back.
+            verifyChecksums(exchange, requestChecksum, responseChecksum);
+
+            if (isExchangeComplete(exchange))
+            {
+                // Counted after the call, not before: a refusal below rewinds the exchange
+                // for a later attempt, and a counter bumped on every attempt would say more
+                // exchanges completed than a consumer ever received.
+                output.onComplete(exchange);
+                completed.incrementAndGet();
+            }
+            else
+            {
+                final IncompleteReason reason = exchange.getClientRequestStartLine() == null
+                        ? IncompleteReason.NO_START_EVENT
+                        : IncompleteReason.NO_STATUS;
+                output.onIncompleteEnd(exchange, reason);
+                incompleteEnds.incrementAndGet();
+                logger.warn("Exchange {} ended but is not a complete record: {}", reqId, reason);
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            // The consumer refused this exchange, so the decoder will offer the end entry
+            // again (FORMAT.md §6). Hold the assembled exchange until then: everything before
+            // the end event — the start line, the headers, every body fragment — lives only
+            // here, and a retry against an empty map would report an orphaned end and hand
+            // the consumer a record missing everything but its final metrics.
+            //
+            // Held aside rather than returned to inFlight, because the sweep would age it out
+            // from there while the consumer was still down. Removing first and restoring on
+            // failure, rather than removing last, keeps the success path — every exchange,
+            // always — a single map operation.
+            awaitingRedelivery.put(reqId, exchange);
+            throw e;
+        }
+
+        maybeSweep();
+    }
+
+    /**
+     * Compares what the gateway recorded against what was actually read back. A mismatch
+     * means the body bytes in the journal are not the bytes that crossed the wire, which
+     * is exactly what an audit trail exists to rule out.
+     */
+    private void verifyChecksums(final JournalExchange exchange, final BodyChecksum journaledRequest, final BodyChecksum journaledResponse)
+    {
+        // A recorded checksum is the whole condition. The writer only has one to record if
+        // it passed body bytes to the journal, so the value's presence already carries
+        // everything an extra guard could have told us — and it carries it in the one field
+        // that cannot be lost independently of the checksum itself.
+        //
+        // This used to also require the start event's journal level and a positive body-byte
+        // count. Those come from other entries: the level from the client request, the byte
+        // count from the end event's traffic metrics. Requiring them turned a sufficient
+        // condition into a conjunction that fails open — lose the start entry, or record the
+        // wrong byte count, and verification is skipped precisely on the exchange whose
+        // record is already damaged. The gate was load-bearing only while the writer had no
+        // way to say "I did not compute one"; BodyChecksum says it now, as a type rather
+        // than as a value every reader has to remember to exclude.
+        //
+        // An observed NOT_RECORDED means no body came back at all, and it is unequal to any
+        // recorded checksum — so the "the writer hashed a body the reader never saw" case
+        // falls out of the same comparison instead of needing a null check beside it.
+        if (journaledRequest.isRecorded())
+        {
+            final BodyChecksum observed = exchange.getObservedRequestChecksum();
+            if (!journaledRequest.equals(observed))
+            {
+                reportMismatch(exchange, BodyKind.REQUEST, journaledRequest, observed);
+            }
+        }
+
+        if (journaledResponse.isRecorded())
+        {
+            final BodyChecksum observed = exchange.getObservedResponseChecksum();
+            if (!journaledResponse.equals(observed))
+            {
+                reportMismatch(exchange, BodyKind.RESPONSE, journaledResponse, observed);
+            }
+        }
+    }
+
+    /**
+     * Reports a mismatch once in full and then by count.
+     * <p>
+     * A mismatch is usually systemic rather than isolated — a writer that records the
+     * wrong thing produces one per exchange — so logging every occurrence at ERROR buries
+     * the rest of the log under hundreds of thousands of identical lines and tells an
+     * operator nothing the first line did not.
+     */
+    private void reportMismatch(final JournalExchange exchange, final BodyKind kind, final BodyChecksum journaled, final BodyChecksum observed)
+    {
+        // Counted after the call, like the completion counters: a consumer that refuses the
+        // report gets the whole end event offered again, and a counter bumped on every
+        // attempt would report more mismatches than a consumer was ever told about. The
+        // report itself is repeated on the retry, deliberately — a consumer that threw may
+        // well not have recorded the first one.
+        output.onChecksumMismatch(exchange, kind, journaled, observed);
+        final long total = checksumMismatches.incrementAndGet();
+
+        if (total == 1)
+        {
+            // BodyChecksum prints "not recorded" for an absent one, so a reader of this line
+            // never has to work out whether "0" means the empty checksum or nothing at all.
+            logger.error("{} body checksum mismatch for {}: journal recorded {} but the stored body checksums to {}. "
+                            + "Further mismatches are counted, not logged; see getChecksumMismatchCount().",
+                    kind, exchange.getRequestId(), journaled, observed);
+        }
+        else if (logger.isDebugEnabled())
+        {
+            logger.debug("{} body checksum mismatch for {} (mismatch #{})", kind, exchange.getRequestId(), total);
+        }
+    }
+
+    private void maybeSweep()
+    {
+        if (++eventsSinceSweep < options.sweepIntervalEvents())
+        {
+            return;
+        }
+        sweep();
+    }
+
+    /**
+     * Runs the age sweep immediately, regardless of how many events have been seen.
+     * <p>
+     * The amortised sweep only advances while events are arriving, so a reader that goes
+     * quiet would otherwise hold abandoned exchanges indefinitely — and never report
+     * them. A caller that knows it has reached a natural pause (the tailer, at the end of
+     * a tick) should call this so the age limit means what it says on an idle stream.
+     */
+    public void sweep()
+    {
+        eventsSinceSweep = 0;
+
+        final long cutoff = System.nanoTime() - maxAgeNanos;
+        final int evicted = inFlight.evictOlderThan(cutoff, e -> evictIncomplete(e, IncompleteReason.TIMED_OUT));
+
+        if (evicted > 0)
+        {
+            logger.warn("Evicted {} exchanges with no EndExchange within {} — journal for those requests is incomplete.",
+                    evicted, Duration.ofNanos(maxAgeNanos));
+        }
+    }
+
+    /**
+     * Reports every exchange still in flight as abandoned, regardless of {@code maxAge}.
+     * <p>
+     * For a reader that cannot resume open exchanges itself. {@code R7Tailer} can, by
+     * recording where each began ({@code OpenExchanges}), and does not call this.
+     * <p>
+     * A process restart loses this reader's entire in-flight set — it lives in memory only —
+     * while the segments that produced it are already checkpointed as delivered, because
+     * decoding those bytes and completing the exchange they belong to are different things
+     * (README.md §11.4). A hard crash cannot be helped: nothing runs. A graceful stop can
+     * call this first, so a container restart or rolling deploy turns "silently lost, no
+     * trace" into "reported abandoned" for whatever was still assembling. It is called at
+     * most once, from process shutdown, so it is not on the amortised sweep path and does
+     * not affect {@code maxAge} accounting for anything still running.
+     * <p>
+     * Exchanges held in {@link #awaitingRedelivery} are deliberately left alone: they are
+     * complete records waiting on a consumer that refused them, not incomplete ones, and
+     * there is no entry left to rewind on the next run — the journal already checkpointed
+     * past them. Their count is only logged, so an operator can see what a restart is about
+     * to leave stalled.
+     */
+    public void shutdown()
+    {
+        final int evicted = inFlight.evictOlderThan(System.nanoTime(), e -> evictIncomplete(e, IncompleteReason.SHUTDOWN));
+        if (evicted > 0)
+        {
+            logger.warn("Shutting down with {} exchange(s) still in flight; reported as abandoned. "
+                    + "A hard crash instead of this graceful stop would have lost them with no report at all.",
+                    evicted);
+        }
+        if (!awaitingRedelivery.isEmpty())
+        {
+            logger.warn("Shutting down with {} exchange(s) held for redelivery to a consumer that had refused "
+                    + "them; their segments will not be re-read on restart and these records are lost.",
+                    awaitingRedelivery.size());
+        }
+    }
+
+    /**
+     * Makes room for one more in-flight exchange, if there is not already room.
+     * <p>
+     * Only ever called when a request id that is <em>not</em> being tracked is about to be
+     * added. It used to sit in {@link #sweep()}, which runs on every event — so an event for
+     * an exchange already in the map could trip the ceiling and evict it. At
+     * {@code maxInFlight = 1} that was fatal rather than merely wasteful: the second event
+     * of every exchange evicted the exchange it belonged to, and nothing could ever
+     * complete.
+     */
+    private void makeRoomForNewExchange()
+    {
+        if (inFlight.size() < options.maxInFlight())
+        {
+            return;
+        }
+
+        sweep();
+
+        if (inFlight.size() >= options.maxInFlight())
+        {
+            // Still over the ceiling after the age sweep. This drops everything currently
+            // tracked, including exchanges seconds old that would have completed — a
+            // blunt backstop against heap exhaustion, not a tuning mechanism. Seeing this
+            // in the log means maxInFlight is too low or maxAge is too high.
+            final int forced = inFlight.evictOlderThan(System.nanoTime(), e -> evictIncomplete(e, IncompleteReason.CAPACITY_EVICTED));
+            logger.error("In-flight exchanges exceeded the ceiling of {}; force-evicted {} incomplete exchanges. "
+                            + "Raise maxInFlight or lower maxAge.",
+                    options.maxInFlight(), forced);
+        }
+    }
+
+    /**
+     * Hands an exchange that will never complete to the consumer, and does not let a failure
+     * there escape.
+     * <p>
+     * This is the one consumer call that a refusal cannot help. Everywhere else a throw means
+     * "offer me this entry again", and the decoder can: it rewinds and the record is
+     * redelivered. An abandoned exchange has no entry to rewind to — the events that built it
+     * were consumed and checkpointed ticks ago, and the sweep that surfaces it is amortised
+     * over whatever event happens to be passing. Letting the throw out would rewind an
+     * unrelated entry, redeliver <em>it</em>, and still not retry this one.
+     * <p>
+     * Worse, it would rewind entries whose effects are already applied. A refusal from inside
+     * a body event would replay that fragment into an exchange that already holds it; a
+     * refusal from the sweep at the end of {@code onEnd} would rewind an exchange that was
+     * delivered successfully and removed, so the retry would report it as an orphaned end.
+     * Both are the failure this mechanism exists to prevent, arriving through the mechanism.
+     * <p>
+     * So the report is best-effort and loud. The exchange is already incomplete and exists
+     * only in memory; there is nothing to preserve by trying again.
+     */
+    private void evictIncomplete(final JournalExchange exchange, final IncompleteReason reason)
+    {
+        abandoned.incrementAndGet();
+        try
+        {
+            output.onAbandoned(exchange, reason);
+        }
+        catch (final RuntimeException e)
+        {
+            logger.error("The consumer rejected abandoned exchange {} ({}); it cannot be offered again "
+                    + "and has been dropped.", exchange.getRequestId(), reason, e);
+        }
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Abandoned incomplete exchange {}: {}", exchange.getRequestId(), reason);
+        }
+    }
+
+    /**
+     * Copies header metadata out of the reader's buffers.
+     * <p>
+     * The decoder hands over lazy FlatBuffer views, and those point into whatever the
+     * reader is currently looking at: a mapped segment. An exchange outlives that —
+     * it is held until its end event, which can be in a later segment, and a consumer may
+     * hold a completed one for longer still. Keeping the view would let the headers
+     * silently change contents when the next file is mapped, which is the same
+     * defect the body fragments already had.
+     * <p>
+     * Like the body copy, this allocates on the reader side only; the gateway write path
+     * is untouched.
+     */
+    /**
+     * Copies a decoded header view into storage the exchange can keep.
+     * <p>
+     * Kept as the bytes rather than as strings. An in-flight exchange holds four header sets
+     * from its first event until its end arrives, and a string pair per header costs several
+     * times what the text does — which is what made the in-flight set dominate the reader's
+     * heap. Body fragments here were always retained as raw bytes; this makes headers agree
+     * with them. Order and multiplicity are preserved exactly, and the text is decoded only
+     * when a consumer actually reads it.
+     */
+    /**
+     * Returns the set already stored on the exchange when this one packs to identical bytes, so
+     * that an exchange holds one copy rather than two.
+     * <p>
+     * Worth doing only because the copies are bytes: byte equality is unambiguous and needs no
+     * reconstruction, where sharing string-backed containers would have meant reasoning about
+     * aliasing. It fires on the response pair of a route with no response filters, where the
+     * snapshot taken at commit and the headers finally sent are the same. It does not fire on
+     * the request pair under the current proxy setup, which rewrites Host and adds forwarding
+     * headers on the way upstream — the check costs a length comparison to find that out.
+     */
+    /**
+     * Returns the header set an entry carries, rebuilding it when the entry recorded a
+     * difference rather than the whole thing.
+     * <p>
+     * A delta that cannot be rebuilt yields null, not a guess and not an empty set. The base it
+     * refers to was in an entry this reader did not get — lost with its segment, or never
+     * written because the level did not call for it — so the headers are <em>unknown</em>, and
+     * the one thing this must not do is let a consumer read "unknown" as "none". It is reported
+     * through the integrity listener for the same reason every other gap is.
+     */
+    private GatewayHeaders resolve(final String reqId,
+                                   final String what,
+                                   final GatewayHeaders headers,
+                                   final HeaderDelta delta,
+                                   final GatewayHeaders base)
+    {
+        if (delta == null)
+        {
+            return headers;
+        }
+        try
+        {
+            return HeaderDeltaCodec.reconstruct(base, delta);
+        }
+        catch (final HeaderDeltaCodec.UnreconstructableDeltaException e)
+        {
+            // Guarded, because this is an observer and not part of the work. Everywhere else
+            // in this class a throw out of a callback means "offer me that entry again", and
+            // letting a monitoring integration's failure travel that path would stall the
+            // segment over a report rather than over the record it describes.
+            try
+            {
+                integrity.onDeltaUnreconstructable(reqId, what, e.getMessage());
+            }
+            catch (final RuntimeException reportFailed)
+            {
+                logger.warn("Integrity listener threw while reporting an unreconstructable delta for {}", reqId, reportFailed);
+            }
+            return null;
+        }
+    }
+
+    private static GatewayHeaders shareIfIdentical(final GatewayHeaders packed, final GatewayHeaders alreadyStored)
+    {
+        return alreadyStored != null && alreadyStored.equals(packed) ? alreadyStored : packed;
+    }
+
+    private static GatewayHeaders copyOf(final GatewayHeaders headers)
+    {
+        return PackedGatewayHeaders.pack(headers);
+    }
+
+    /**
+     * As {@link #copyOf(GatewayHeaders)}, for the attribute view on the end event.
+     */
+    private static GatewayAttributes copyOf(final GatewayAttributes attributes)
+    {
+        if (attributes == null)
+        {
+            return null;
+        }
+
+        final FastGatewayAttributes copy = new FastGatewayAttributes();
+        attributes.forEach((name, value) -> {
+            if (name != null && value != null)
+            {
+                copy.add(name, value);
+            }
+        });
+        return copy;
+    }
+
+    /**
+     * The exchange this id is being assembled into, creating one if there is none.
+     * <p>
+     * The sweep runs <em>before</em> the lookup, and that ordering is the whole correctness
+     * of this method. It ran after, on a reference already taken, and the sweep can evict
+     * that very exchange: an exchange past {@code maxAge} receiving a new metadata event on
+     * the tick that trips the interval was reported abandoned, detached from the map, and
+     * then handed back here as though it were still tracked. Everything set on it afterwards
+     * went nowhere, and its end event arrived to an empty map and was reported an orphan —
+     * two incomplete reports for one exchange that might have completed.
+     * <p>
+     * Sweeping first means an evicted id is simply recreated. That loses the metadata
+     * gathered before the eviction, but the eviction already said so; a caller cannot be
+     * handed an object the map has let go of.
+     */
+    private JournalExchange getOrCreate(String id)
+    {
+        maybeSweep();
+
+        final JournalExchange existing = inFlight.get(id);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        makeRoomForNewExchange();
+        return inFlight.computeIfAbsent(id, JournalExchange::new);
+    }
+
+    private boolean validateExchangeExists(JournalExchange exchange, String id, BodyKind kind)
+    {
+        if (exchange == null)
+        {
+            // If we have body data but no metadata slice, we have a protocol/ordering
+            // violation. Counted after the call, for the same reason as the orphaned end
+            // above — this one is a body entry, and a consumer that keeps refusing it would
+            // otherwise grow getOrphanedBodyCount() without bound on a single event.
+            output.onOrphanedBody(id, kind);
+            orphanedBodies.incrementAndGet();
+            logger.warn("Protocol Violation: Received {} body for ID {} but no Start event was recorded.", kind, id);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isExchangeComplete(JournalExchange exchange)
+    {
+        // At minimum, we must have the original ClientRequest to know the Method/URI
+        // and a status > 0 from the EndExchange event.
+        return exchange.getClientRequestStartLine() != null && exchange.getStatus() > 0;
+    }
+
+    /**
+     * Whether this reassembler holds state for the exchange: still being assembled, or
+     * complete and held for a consumer that refused it. Either way it exists only in memory,
+     * so a reader that wants it to survive a restart has to be able to rebuild it.
+     */
+    public boolean isOpen(final String reqId)
+    {
+        return inFlight.get(reqId) != null || awaitingRedelivery.containsKey(reqId);
+    }
+
+    public int getInFlightCount()
+    {
+        return inFlight.size();
+    }
+
+    public long getCompletedCount()
+    {
+        return completed.get();
+    }
+
+    /**
+     * Exchanges that reached their end event but were not usable as a complete record.
+     */
+    public long getIncompleteEndCount()
+    {
+        return incompleteEnds.get();
+    }
+
+    /**
+     * Exchanges dropped without ever seeing an end event: aged out or force-evicted.
+     */
+    public long getAbandonedCount()
+    {
+        return abandoned.get();
+    }
+
+    public long getOrphanedEndCount()
+    {
+        return orphanedEnds.get();
+    }
+
+    public long getOrphanedBodyCount()
+    {
+        return orphanedBodies.get();
+    }
+
+    public long getChecksumMismatchCount()
+    {
+        return checksumMismatches.get();
+    }
+}

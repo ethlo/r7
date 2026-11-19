@@ -1,0 +1,199 @@
+package com.ethlo.r7.config;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.zip.CRC32;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ethlo.r7.GatewayScheduler;
+import com.ethlo.r7.api.GatewayRoute;
+
+public final class HotReloadService
+{
+    private static final Logger log = LoggerFactory.getLogger(HotReloadService.class);
+
+    private final Path configFilePath;
+    private final ConfigurationManager configManager;
+    private final RouteRegistry routeRegistry;
+    private final Set<RouteGenerationListener> listeners = new LinkedHashSet<>();
+    private FileFingerprint lastKnownFingerprint;
+    private volatile Instant loadedAt;
+    private volatile Instant rejectedAt;
+
+    public HotReloadService(final GatewayScheduler scheduler, final Path configFilePath, final ConfigurationManager configManager, final RouteRegistry routeRegistry)
+    {
+        this.configFilePath = configFilePath;
+        this.configManager = configManager;
+        this.routeRegistry = routeRegistry;
+        this.lastKnownFingerprint = FileFingerprint.of(configFilePath);
+
+        reloadPipeline(true);
+
+        // Last, so the poller never sees a half-constructed service
+        scheduler.scheduleEvery(Duration.ofSeconds(1), this::pollForChanges);
+    }
+
+    void pollForChanges()
+    {
+        final FileFingerprint current = FileFingerprint.of(configFilePath);
+
+        // A newer-mtime-only check misses a `cp -p` rollback, which restores an older file's
+        // timestamp along with its content: the clock moves backwards, but it is still a change
+        // that must be picked up. Comparing the full fingerprint - mtime, size and a content hash
+        // - catches that, and any other edit a bare 'greater than' would miss (e.g. an editor that
+        // preserves mtime, or a filesystem with second-granularity timestamps).
+        if (!current.equals(this.lastKnownFingerprint))
+        {
+            log.debug("Detected change in configuration file {}", configFilePath.toAbsolutePath());
+            this.lastKnownFingerprint = current;
+            reloadPipeline(false);
+        }
+    }
+
+    /**
+     * mtime, size and a checksum of the file's content, taken together, so a change is detected
+     * regardless of which of the three an edit happens to leave alone.
+     */
+    private record FileFingerprint(FileTime modifiedTime, long size, long contentHash)
+    {
+        static FileFingerprint of(final Path path)
+        {
+            try
+            {
+                final byte[] content = Files.readAllBytes(path);
+                final FileTime modifiedTime = Files.getLastModifiedTime(path);
+                final CRC32 crc = new CRC32();
+                crc.update(content);
+                return new FileFingerprint(modifiedTime, content.length, crc.getValue());
+            }
+            catch (IOException e)
+            {
+                throw new UncheckedIOException(e);
+            }
+        }
+    }
+
+    /**
+     * Synchronized with {@link #onReload}: a listener is either added before a reload starts,
+     * and prepares with it, or after it ends, and prepares the routes it published. Otherwise a
+     * listener added mid-reload misses the generation that goes live, which then runs without
+     * what the listener attaches to it.
+     */
+    synchronized void reloadPipeline(boolean initial)
+    {
+        try
+        {
+            log.info("Loading routes from {}", configFilePath.toAbsolutePath());
+            final RouteRegistry.Snapshot snapshot = this.configManager.buildFrom(this.configFilePath);
+            this.prepare(snapshot.routes());
+            final List<GatewayRoute> previous = this.routeRegistry.getRoutes();
+            this.routeRegistry.publish(snapshot);
+            this.loadedAt = Instant.now();
+            this.rejectedAt = null;
+            this.retire(previous);
+            log.info("Configuration {} successfully loaded {} routes from version {}, source digest sha256:{}", this.configFilePath, snapshot.routes().size(), snapshot.version(), snapshot.sourceDigest());
+        }
+        catch (final RuntimeException e)
+        {
+            if (!initial)
+            {
+                this.rejectedAt = Instant.now();
+                log.warn("Hot reload failed. Retaining current configuration: {}", e.getMessage());
+            }
+            else
+            {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * What the gateway is running on, for display. A rejected edit leaves the previous routes in
+     * place and says so only in the log; without this an operator looking at the dashboard sees
+     * the old routes and no sign that the file on disk says otherwise.
+     * <p>
+     * Deliberately carries no error message: validation messages can quote configured values, and
+     * this is shown on a page whose viewers are not necessarily the people who write the config.
+     *
+     * @param rejectedAt when the most recent change to the file failed to load, or null when the
+     *                   file as last read is what is running
+     */
+    public record Status(String file, Instant loadedAt, Instant rejectedAt)
+    {
+    }
+
+    public Status status()
+    {
+        return new Status(this.configFilePath.toAbsolutePath().toString(), this.loadedAt, this.rejectedAt);
+    }
+
+    /**
+     * Prepares the generation with every listener before it is published; on a rejection, the
+     * listeners that had prepared it retire it again, so nothing built for it outlives it.
+     */
+    private void prepare(final List<GatewayRoute> routes)
+    {
+        final List<RouteGenerationListener> prepared = new ArrayList<>();
+        try
+        {
+            for (final RouteGenerationListener listener : this.listeners)
+            {
+                listener.prepare(routes);
+                prepared.add(listener);
+            }
+        }
+        catch (final RuntimeException e)
+        {
+            for (final RouteGenerationListener listener : prepared)
+            {
+                retire(listener, routes);
+            }
+            throw e;
+        }
+    }
+
+    private void retire(final List<GatewayRoute> routes)
+    {
+        for (final RouteGenerationListener listener : this.listeners)
+        {
+            retire(listener, routes);
+        }
+    }
+
+    /**
+     * A failure to release an old generation is not a failure of the new one: by then it is
+     * published, and reporting the reload as rejected would claim the old routes still run.
+     */
+    private static void retire(final RouteGenerationListener listener, final List<GatewayRoute> routes)
+    {
+        try
+        {
+            listener.retire(routes);
+        }
+        catch (final RuntimeException e)
+        {
+            log.warn("Releasing a route generation failed in {}", listener, e);
+        }
+    }
+
+    /**
+     * Adds the listener and prepares the routes currently in service with it, as one step with
+     * respect to reloads. A listener that fails to prepare them is not added.
+     */
+    public synchronized void onReload(final RouteGenerationListener listener)
+    {
+        listener.prepare(this.routeRegistry.getRoutes());
+        this.listeners.add(listener);
+    }
+}

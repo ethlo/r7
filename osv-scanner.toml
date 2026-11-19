@@ -1,0 +1,2 @@
+# Advisories accepted after review. Each entry names why it does not apply and expires, so it is
+# re-examined rather than forgotten. Anything not listed here fails the dependency scan.

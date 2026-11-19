@@ -1,0 +1,116 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.ethlo.r7</groupId>
+    <artifactId>r7</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>r7</name>
+    <modules>
+        <module>r7-api</module>
+        <module>r7-server</module>
+        <module>r7-upstream</module>
+        <module>r7-server-blocking</module>
+        <module>r7-helidon</module>
+        <module>r7-servlet</module>
+        <module>r7-core</module>
+        <module>r7-config</module>
+        <module>r7-journal-api</module>
+        <module>r7-journal-mmap</module>
+        <module>r7-tailer-api</module>
+        <module>r7-tailer-files</module>
+        <module>r7-utils</module>
+        <module>r7-tailer-json</module>
+        <module>r7-tailer-warc</module>
+        <module>r7-tailer</module>
+        <module>r7-reaper</module>
+    </modules>
+    <properties>
+        <!-- Built with JDK 27, released for 25: an LTS floor, so hosts that embed r7 (a servlet
+             container, say) are not forced onto a non-LTS runtime. 25 is also as low as it goes:
+             r7-journal-mmap uses the FFM API, final in 22. r7-helidon, the host the images run,
+             targets 27 for Helidon 27 and its per-carrier I/O pollers. -->
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <jackson.version>3.2.3</jackson.version>
+        <!-- One version for every module: 1.5.34+ carries the fixes for CVE-2026-9828 and CVE-2026-10532 -->
+        <logback.version>1.6.5</logback.version>
+    </properties>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.12.0</version>
+                <configuration>
+                    <windowtitle>ethlo R7 Gateway</windowtitle>
+                    <doctitle><![CDATA[<h1>ethlo R7 Gateway</h1>]]></doctitle>
+                    <bottom><![CDATA[<i>Copyright &#169; {currentYear} Ethlo. All Rights Reserved.</i>]]></bottom>
+                    <show>public</show>
+                    <quiet>true</quiet>
+                    <failOnError>false</failOnError>
+                    <failOnWarnings>false</failOnWarnings>
+                    <doclint>all,-missing</doclint>
+                    <links>
+                        <link>https://docs.oracle.com/en/java/javase/25/docs/api/</link>
+                    </links>
+                    <groups>
+                        <group>
+                            <title>Core API</title>
+                            <packages>com.ethlo.r7.api*</packages>
+                        </group>
+                        <group>
+                            <title>Helidon Server</title>
+                            <packages>com.ethlo.r7.helidon*</packages>
+                        </group>
+                        <group>
+                            <title>Journaling System</title>
+                            <packages>com.ethlo.r7.journal*</packages>
+                        </group>
+                    </groups>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.6.0</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- The gateway does not start without a fingerprint key, and neither do
+                             the tests that start one. Read as R7_FINGERPRINT_KEY falls back to a
+                             system property, like every ${VAR} reference. -->
+                        <R7_FINGERPRINT_KEY>test-fingerprint-key-of-at-least-32-characters</R7_FINGERPRINT_KEY>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <dependencyManagement>
+        <dependencies>
+            <!-- One BOM for every Jackson artifact: jackson-dataformat-yaml drags in
+                 jackson-databind transitively, so pinning the modules individually let a
+                 patched jackson-core sit next to an unpatched databind. -->
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.wildfly.common</groupId>
+                <artifactId>wildfly-common</artifactId>
+                <version>2.0.1</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

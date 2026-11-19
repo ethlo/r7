@@ -1,0 +1,40 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.ethlo.r7</groupId>
+        <artifactId>r7</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <!--
+        The upstream client: a blocking HTTP/1.1 client that runs each exchange on the calling
+        thread, meant for a virtual thread. Every server proxies through it; a server supplies
+        the client side of the exchange through ProxiedExchange. Names no server type. See
+        design/upstream.md.
+    -->
+    <artifactId>r7-upstream</artifactId>
+    <packaging>jar</packaging>
+    <name>r7-upstream</name>
+    <url>https://github.com/ethlo/r7</url>
+    <dependencies>
+        <dependency>
+            <groupId>com.ethlo.r7</groupId>
+            <artifactId>r7-server</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- TEST -->
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.27.7</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>6.1.3</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

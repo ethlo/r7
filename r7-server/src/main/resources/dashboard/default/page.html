@@ -1,0 +1,2161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>r7 gateway</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230a0a0b'/%3E%3Cpath d='M13 44V24M13 32c0-6 4-8 9-8' fill='none' stroke='%23f4f4f5' stroke-width='6' stroke-linecap='square'/%3E%3Cpath d='M32 21h20L40 45' fill='none' stroke='%23ff5e00' stroke-width='6' stroke-linecap='square'/%3E%3C/svg%3E">    <style>
+    /* ==========================================================================
+       1. THEMING & VARIABLES
+       ========================================================================== */
+    :root {
+        --base-size: 14px;
+        --bg: #0a0a0b;
+        --fg: #e4e4e7;
+        --accent: #ff5e00;
+        --dim: #a1a1aa;
+        --brighter: #efeef1;
+        --border: #27272a;
+        --border-subtle: rgba(255, 255, 255, 0.05);
+        --border-dotted: rgba(128, 128, 128, 0.3);
+        --row-hover: #18181b;
+        --panel: #111112;
+        --card-bg: #131315;
+    }
+
+    /* ==========================================================================
+       2. GLOBAL & BASE STYLES
+       ========================================================================== */
+    html {
+        font-size: var(--base-size);
+    }
+
+    body {
+        font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
+        background: var(--bg);
+        color: var(--fg);
+        margin: 0;
+        padding: 2.5rem;
+        font-size: 1rem;
+        font-weight: 400;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    pre {
+        background: #09090b;
+        padding: 1rem;
+        color: var(--fg);
+        font-size: 0.8rem;
+        border: 1px solid var(--border);
+        overflow-x: auto;
+        border-radius: 6px;
+    }
+
+    h1 {
+        margin: 0;
+        font-size: 1.2rem;
+        font-weight: 500;
+        letter-spacing: 2px;
+    }
+
+    h1 span {
+        color: var(--accent);
+    }
+
+    /* ==========================================================================
+       3. LAYOUT COMPONENTS
+       ========================================================================== */
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    header {
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 1.5rem;
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .app-footer {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        text-align: right;
+        font-size: 0.65rem;
+        color: var(--dim);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+
+    /* ==========================================================================
+       4. TYPOGRAPHY & UTILITIES
+       ========================================================================== */
+    .sub {
+        font-size: 0.85rem;
+        color: var(--dim);
+        margin-top: 4px;
+    }
+
+    .sum {
+        font-size: 0.85rem;
+        color: var(--brighter);
+        margin-top: 4px;
+    }
+
+    .sys-vitals {
+        color: var(--dim);
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    }
+
+    .sys-info {
+        font-size: 0.9rem;
+        color: var(--dim);
+    }
+
+    #sys-version {
+        color: var(--fg);
+        font-weight: 500;
+    }
+
+    .text-muted {
+        opacity: 1;
+    }
+
+    .text-dim {
+        opacity: 0.7;
+    }
+
+    .text-truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .text-nowrap {
+        white-space: nowrap;
+    }
+
+    .text-right {
+        text-align: right;
+    }
+
+    .spacer-sm {
+        height: 6px;
+    }
+
+    .status-indicator {
+        margin-right: 6px;
+    }
+
+    /* Status Colors */
+    .text-warn {
+        color: #ff9800;
+        font-weight: 300;
+    }
+
+    .text-err {
+        color: #ee4444;
+        font-weight: 300;
+    }
+
+    .text-http {
+        color: #00d4ff;
+        font-weight: 300;
+    }
+
+    .text-ws {
+        color: #00ff88;
+        font-weight: 300;
+    }
+
+    .text-4xx {
+        color: rgba(200, 152, 0, 0.7);
+        font-weight: 300;
+    }
+
+    .text-5xx {
+        color: rgba(238, 100, 100, 0.7);
+        font-weight: 300;
+    }
+
+    .text-3xx {
+        color: rgba(50, 150, 255, 0.7);
+        font-weight: 300;
+    }
+
+    .text-2xx {
+        color: rgba(0, 200, 100, 0.7);
+        font-weight: 300;
+    }
+
+    /* ==========================================================================
+       5. TABLE STYLES
+       ========================================================================== */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        text-align: left;
+        font-size: 0.90rem;
+        color: var(--dim);
+        padding: 0.8rem 1rem;
+        border-bottom: 1px solid var(--border);
+        font-weight: 400;
+    }
+
+    td {
+        padding: 0.8rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+    }
+
+    th, td {
+        border-right: 1px solid var(--border-subtle);
+    }
+
+    th:last-child, td:last-child {
+        border-right: none;
+    }
+
+    tr.clickable-row {
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+
+    tr.clickable-row:hover td {
+        background: var(--row-hover);
+    }
+
+    tr.clickable-row:hover td:first-child {
+        box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    tr.total-row td {
+        background: var(--card-bg);
+        border-bottom: 1px solid var(--dim);
+        padding-top: 0.8rem;
+        padding-bottom: 0.8rem;
+    }
+
+    .col-route {
+        width: 250px;
+        min-width: 250px;
+        max-width: 250px;
+        padding-right: 15px;
+    }
+
+    /* ==========================================================================
+       6. METRICS UI (Dotted Leaders)
+       ========================================================================== */
+    .metric-row {
+        display: flex;
+        align-items: flex-end;
+        line-height: 1.1;
+        margin: 0;
+        padding-bottom: 2px;
+    }
+
+    .metric-label {
+        opacity: 1;
+    }
+
+    .metric-leader {
+        flex-grow: 1;
+        border-bottom: 1px dotted var(--border-dotted);
+        margin: 0 0.5rem;
+        position: relative;
+        top: -4px;
+    }
+
+    .metric-value {
+        white-space: nowrap;
+    }
+
+    /*
+    ==========================================================================
+    7. VIEW SLIDER (In-Place Transition)
+    ========================================================================== */
+    #view-slider {
+        position: relative;
+        width: 100%;
+        min-height: 400px;
+    }
+
+    .slide-pane {
+        width: 100%;
+        transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease;
+    }
+
+    /* Default State: Table is active, Details are hidden */
+    #pane-table {
+        position: relative;
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    #pane-details {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform: translateX(40px);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* Active State: Details are active, Table is hidden */
+    #view-slider.show-details-view #pane-table {
+        position: absolute;
+        top: 0;
+        left: 0;
+        transform: translateX(-40px);
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    #view-slider.show-details-view #pane-details {
+        position: relative;
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    /* Masonry Grid inside the details pane */
+    #details-live, #details-content {
+        column-width: 360px;
+        column-gap: 1.5rem;
+        padding-bottom: 2rem;
+    }
+
+    /* Prevent column breaks inside cards */
+    .panel-section {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        padding: 1.2rem;
+        margin-bottom: 1.5rem;
+        break-inside: avoid;
+        page-break-inside: avoid;
+        overflow: hidden;
+    }
+
+    .panel-header-container {
+        column-span: all;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+        padding-bottom: 0.75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .panel-title {
+        font-size: 1.05em;
+        font-weight: 500;
+        color: var(--fg);
+        margin: 0;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }
+
+    .panel-subtitle {
+        font-size: 0.9em;
+        color: var(--dim);
+        word-break: break-all;
+        line-height: 1.2;
+    }
+
+    .panel-section-title {
+        font-size: 0.85em;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--brighter);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+    }
+
+    /* Convert the close button to a subtle text link */
+    .panel-close-btn {
+        background: transparent;
+        border: none;
+        color: var(--dim);
+        font-family: inherit;
+        font-size: 0.8rem;
+        padding: 4px 8px;
+        cursor: pointer;
+        transition: color 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .panel-close-btn:hover {
+        color: var(--fg);
+        background: transparent;
+    }
+
+    .panel-close-icon {
+        font-size: 1.2em;
+        line-height: 0;
+        position: relative;
+        top: -1px;
+    }
+
+    /* ==========================================================================
+       8. JOURNALING & BADGES
+       ========================================================================== */
+    .pill-group {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+        font-size: 0.85em
+    }
+
+    .journal-tag {
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.85em;
+        background: rgba(128, 128, 128, 0.1);
+        opacity: 0.5;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        letter-spacing: 1px;
+        transition: all 0.2s ease;
+    }
+
+    [class*="journal-active-"] {
+        opacity: 1;
+        border-color: currentColor;
+    }
+
+    .journal-active-none {
+        color: var(--dim);
+        border-color: var(--dim);
+        background: rgba(161, 161, 170, 0.1);
+    }
+
+    .journal-active-metadata {
+        color: #2dd4bf;
+        border-color: #2dd4bf;
+        background: rgba(45, 212, 191, 0.1);
+    }
+
+    .journal-active-headers {
+        color: #3b82f6;
+        border-color: #3b82f6;
+        background: rgba(59, 130, 246, 0.1);
+    }
+
+    .journal-active-full {
+        color: #a855f7;
+        border-color: #a855f7;
+        background: rgba(168, 85, 247, 0.1);
+    }
+
+    .j-badge {
+        font-weight: 900;
+        display: inline-block;
+        min-width: 14px;
+        text-align: center;
+    }
+
+    .sys-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--dim);
+        padding: 6px 12px;
+        font-family: inherit;
+        font-size: 0.8rem;
+        letter-spacing: 1px;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+
+    .sys-btn:hover {
+        background: var(--card-bg);
+        color: var(--fg);
+        border-color: rgba(128, 128, 128, 0.4);
+    }
+
+    /* ==========================================================================
+       9. OPERATOR SIGNALS
+       ========================================================================== */
+    .banner-warn {
+        display: none;
+        border: 1px solid #ff9800;
+        background: rgba(255, 152, 0, 0.08);
+        color: #ffb74d;
+        padding: 0.8rem 1rem;
+        margin: -1rem 0 1.5rem;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+
+    .banner-warn.visible {
+        display: block;
+    }
+
+    /* The gateway in one word, and the components that make it less than OK */
+    #gateway-health {
+        font-size: 0.85rem;
+        padding: 3px 10px;
+    }
+
+    .health-problems {
+        display: none;
+        margin: -1rem 0 1.5rem;
+        font-size: 0.85rem;
+        line-height: 1.7;
+    }
+
+    .health-problems.visible {
+        display: block;
+    }
+
+    .health-problems a {
+        color: var(--fg);
+        cursor: pointer;
+    }
+
+    .group-heading {
+        column-span: all;
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        color: var(--dim);
+        margin: 0.5rem 0 1rem;
+    }
+
+    .route-order {
+        color: var(--dim);
+        font-weight: 300;
+        margin-right: 4px;
+    }
+
+    .tag {
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+        padding: 1px 5px;
+        border-radius: 3px;
+        border: 1px solid rgba(128, 128, 128, 0.35);
+        color: var(--dim);
+        vertical-align: middle;
+    }
+
+    .tag-up {
+        color: #2ecc71;
+        border-color: rgba(46, 204, 113, 0.5);
+    }
+
+    .tag-down {
+        color: #ee4444;
+        border-color: rgba(238, 68, 68, 0.6);
+    }
+
+    .tag-warn {
+        color: #ff9800;
+        border-color: rgba(255, 152, 0, 0.6);
+    }
+
+    .filter-item {
+        padding-left: 12px;
+        margin: 6px 0;
+    }
+
+    .filter-name {
+        color: #ccc;
+        font-weight: 300;
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: inline-block;
+    }
+
+    .filter-summary {
+        color: var(--dim);
+        font-size: 0.85em;
+        margin-left: 6px;
+        word-break: break-word;
+    }
+
+    .filter-args {
+        margin: 4px 0 0 6px;
+        font-size: 0.8em;
+        color: var(--dim);
+    }
+
+    .filter-args summary {
+        cursor: pointer;
+        letter-spacing: 1px;
+    }
+
+    .filter-args pre {
+        margin: 4px 0 0;
+        padding: 0.5rem;
+        font-size: 0.95em;
+    }
+
+    .cfg-default {
+        color: var(--dim);
+    }
+
+    .cfg-changed {
+        color: var(--brighter);
+        box-shadow: inset 2px 0 0 var(--accent);
+        padding-left: 6px;
+    }
+
+    .muted-note {
+        font-size: 0.8rem;
+        color: var(--dim);
+        line-height: 1.5;
+        margin-top: 8px;
+    }
+</style>
+</head>
+<body>
+
+<div class="container" id="main-container">
+    <header>
+        <div>
+            <h1>r<span>7</span> GATEWAY</h1>
+            <div class="sys-vitals" id="sys-vitals">UPTIME: -- | SYS: -- | ROUTES: -- | DISK: --</div>
+        </div>
+        <div style="display: flex; gap: 20px; align-items: center;">
+            <span class="tag" id="gateway-health" title="The worst any filter or upstream reports">--</span>
+            <button class="sys-btn" data-action="config">CONFIG</button>
+            <div class="sys-info" id="last-update">CONNECTING...</div>
+        </div>
+    </header>
+
+    <div class="health-problems" id="health-problems"></div>
+    <div class="banner-warn" id="reload-banner"></div>
+
+    <div id="view-slider">
+
+        <div id="pane-table" class="slide-pane">
+            <table id="route-table">
+                <thead>
+                <tr>
+                    <th class="col-route">ROUTE</th>
+                    <th class="col-active">STATUS</th>
+                    <th class="col-totals">TOTALS</th>
+                    <th class="col-ingress">INGRESS / EGRESS</th>
+                    <th class="col-journal">JOURNAL</th>
+                </tr>
+                </thead>
+                <tbody id="view"></tbody>
+            </table>
+        </div>
+
+        <div id="pane-details" class="slide-pane">
+            <!-- Live figures are redrawn every poll; configuration only when the view opens or the
+                 config changes, so it can be selected, copied and expanded without being wiped. -->
+            <div id="details-live"></div>
+            <div id="details-content"></div>
+        </div>
+
+    </div>
+
+    <footer class="app-footer">
+        r7 GATEWAY // SYS: <span id="sys-version">--</span> // ROUTES: <span id="routes-version">--</span>
+    </footer>
+</div>
+
+<script>
+    const FRACTION_DIGITS = 2;
+    const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+    let previousGcTime = null;
+    let lastGcDelta = 0;
+    let lastGcChangeAt = null;
+
+    // Renders a recency-based GC activity indicator instead of an instantaneous "ms/s" rate,
+    // which reads as permanently "+0 ms/s" (and therefore looks broken/frozen) with modern
+    // low-pause collectors like ZGC that rarely accumulate measurable collection time between
+    // polls. Ticks every second the details panel is open, so it visibly stays "live" even
+    // when no new collection has happened.
+    function formatGcActivity() {
+        if (lastGcChangeAt == null) return '<span class="text-dim">NO GC YET</span>';
+        const secsAgo = Math.max(0, Math.round((performance.now() - lastGcChangeAt) / 1000));
+        const cls = lastGcDelta > 200 ? 'text-err' : (lastGcDelta > 50 ? 'text-warn' : 'text-dim');
+        return `<span class="${cls}">+${lastGcDelta} ms, ${secsAgo}s AGO</span>`;
+    }
+
+    function getUnitIndex(b) {
+        if (b === 0 || b == null) return 0;
+        return Math.min(Math.floor(Math.log(b) / Math.log(1024)), UNITS.length - 1);
+    }
+
+    function formatBytes(b, forceUnitIndex = -1) {
+        const i = forceUnitIndex >= 0 ? forceUnitIndex : getUnitIndex(b);
+        if (b === 0 || b == null) {
+            return forceUnitIndex >= 0 ? '0.00 ' + UNITS[i] : '0 B';
+        }
+        return (b / Math.pow(1024, i)).toFixed(FRACTION_DIGITS) + ' ' + UNITS[i];
+    }
+
+    function getPressureClass(used, max) {
+        if (!max || max <= 0) return '';
+        const ratio = used / max;
+        if (ratio >= 0.90) return 'text-err';
+        if (ratio >= 0.80) return 'text-warn';
+        return '';
+    }
+
+    function formatCompact(num) {
+        if (num === 0 || num == null) return '0';
+        return new Intl.NumberFormat(window.locale, {
+            notation: 'compact',
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1
+        }).format(num);
+    }
+
+    function formatUptime(iso) {
+        if (!iso) return "--";
+        // java.time.Duration#toString() never emits a "D" component - even a multi-day
+        // uptime is rendered as e.g. "PT127H46M40S" - so deriving days from a "D" group (as
+        // this used to) never matched and large uptimes showed as an ever-growing hour count
+        // instead of "5d 07:46:40". Parse the raw H/M/S components and re-derive days here.
+        const match = iso.match(/^PT(?:([\d.]+)H)?(?:([\d.]+)M)?(?:([\d.]+)S)?$/);
+        if (!match) return esc(iso);
+
+        const totalHours = parseFloat(match[1] || '0');
+        const totalSeconds = Math.floor(totalHours * 3600 + parseFloat(match[2] || '0') * 60 + parseFloat(match[3] || '0'));
+
+        const days = Math.floor(totalSeconds / 86400);
+        const h = String(Math.floor((totalSeconds % 86400) / 3600)).padStart(2, '0');
+        const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+        const s = String(totalSeconds % 60).padStart(2, '0');
+
+        return `${days > 0 ? days + 'd ' : ''}${h}:${m}:${s}`;
+    }
+
+    function parseDurationMs(iso) {
+        if (!iso || !iso.startsWith('P')) return 0;
+        let ms = 0;
+        const h = iso.match(/([\d.]+)H/);
+        const m = iso.match(/([\d.]+)M/);
+        const s = iso.match(/([\d.]+)S/);
+
+        if (h) ms += parseFloat(h[1]) * 3600000;
+        if (m) ms += parseFloat(m[1]) * 60000;
+        if (s) ms += parseFloat(s[1]) * 1000;
+
+        return ms;
+    }
+
+    // Renders an ISO-8601 duration config value ("PT2S", "PT1M", "PT500MS" wouldn't occur since
+    // Jackson emits sub-second precision as fractional seconds, e.g. "PT0.5S") as a compact
+    // human string, instead of showing the raw ISO literal next to already-formatted rows.
+    function formatDuration(iso) {
+        if (!iso) return '--';
+        const ms = parseDurationMs(iso);
+        if (ms === 0) return '0s';
+        if (ms % 1000 !== 0) return (ms / 1000).toFixed(FRACTION_DIGITS) + 's';
+        const totalSeconds = ms / 1000;
+        if (totalSeconds < 60) return totalSeconds + 's';
+        if (totalSeconds % 60 === 0 && totalSeconds < 3600) return (totalSeconds / 60) + 'm';
+        if (totalSeconds % 3600 === 0) return (totalSeconds / 3600) + 'h';
+        const m = Math.floor(totalSeconds / 60);
+        const s = totalSeconds % 60;
+        return `${m}m ${s}s`;
+    }
+
+    // Latency percentiles arrive in microseconds as histogram bucket upper bounds - accurate to
+    // within 25% - so they are shown to two significant figures, not as false precision.
+    function formatMicros(us) {
+        if (!us) return '--';
+        if (us < 1000) return `${us}µs`;
+        if (us < 1000000) {
+            const ms = us / 1000;
+            return (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + 'ms';
+        }
+        return (us / 1000000).toFixed(1) + 's';
+    }
+
+    function latencyClass(us) {
+        if (us >= 1000000) return 'text-err';
+        if (us >= 250000) return 'text-warn';
+        return '';
+    }
+
+    function parseTimestamp(iso) {
+        if (!iso || iso === "1970-01-01T00:00:00Z") return 0;
+        return new Date(iso).getTime();
+    }
+
+    function timeAgo(ts) {
+        const time = typeof ts === 'string' ? parseTimestamp(ts) : ts;
+        if (!time || time === 0) return 'NEVER';
+        const diff = Math.floor((Date.now() - time) / 1000);
+        if (diff < 2) return 'NOW';
+        if (diff < 60) return `${diff}s AGO`;
+
+        const m = Math.floor(diff / 60);
+        if (m < 60) return `${m}m AGO`;
+
+        const h = Math.floor(m / 60);
+        if (h < 24) return `${h}h AGO`;
+
+        return `${Math.floor(h / 24)}d AGO`;
+    }
+
+    function sumStatuses(statusObj, min, max) {
+        if (!statusObj) return 0;
+        let sum = 0;
+        for (const [code, count] of Object.entries(statusObj)) {
+            const c = parseInt(code, 10);
+            if (c >= min && c <= max) sum += count;
+        }
+        return sum;
+    }
+
+    // The sparkline window ("the last 2m") is what "currently" means on this page: lifetime
+    // totals are persisted across restarts and stop moving once they are large.
+    function windowSeconds(sparkline) {
+        const meta = sparkline?.metadata;
+        if (!meta) return 0;
+        return meta.capacity * (parseDurationMs(meta.interval) / 1000);
+    }
+
+    function windowLabel(sparkline) {
+        const secs = windowSeconds(sparkline);
+        if (!secs) return '--';
+        return secs >= 60 && secs % 60 === 0 ? `${secs / 60}m` : `${Math.round(secs)}s`;
+    }
+
+    // The sparkline only buckets 2xx, 4xx and 5xx (see SparklineRingBuffer), so window
+    // percentages are shares of those - 1xx/3xx are not part of the denominator.
+    function windowStats(sparkline) {
+        const sum = (arr) => (arr || []).reduce((a, v) => a + (v || 0), 0);
+        const s2 = sum(sparkline?.success);
+        const s4 = sum(sparkline?.client_error);
+        const s5 = sum(sparkline?.server_error);
+        const total = s2 + s4 + s5;
+        const secs = windowSeconds(sparkline);
+        return {
+            total, s2, s4, s5,
+            pct4: total > 0 ? (s4 / total) * 100 : 0,
+            pct5: total > 0 ? (s5 / total) * 100 : 0,
+            avgRps: secs > 0 ? total / secs : 0
+        };
+    }
+
+    function formatPct(pct, total) {
+        if (!total) return '--';
+        if (pct === 0) return '0%';
+        return pct < 0.1 ? '<0.1%' : pct.toFixed(1) + '%';
+    }
+
+    function errorPctClass(pct) {
+        if (pct >= 5) return 'text-err';
+        if (pct > 0) return 'text-warn';
+        return '';
+    }
+
+    const mRow = (label, primaryValue, isSum = false, valueClass = '', secondaryValue = null) => {
+        const valContainer = secondaryValue !== null
+            ? `<div style="display: flex; justify-content: flex-end; gap: 1.25rem; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                 <span class="${valueClass}">${primaryValue}</span>
+                 <span class="${valueClass}">${secondaryValue}</span>
+               </div>`
+            : `<div style="display: block; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;">
+                 <span class="${valueClass}">${primaryValue}</span>
+               </div>`;
+
+        return `
+    <div class="${isSum ? 'sum' : 'sub'} metric-row" style="display: flex; align-items: baseline;">
+        <span class="metric-label">${label}</span>
+        <span class="metric-leader"></span>
+        <div class="metric-value">
+            ${valContainer}
+        </div>
+    </div>`;
+    };
+
+    // Everything below builds HTML strings from what the gateway reports - route ids, predicate
+    // and filter summaries, upstream URLs, override keys. Those come from routes.yaml, and may be
+    // written by people other than those viewing this page, so every such value goes through esc()
+    // before it becomes markup or an attribute. Numbers and the page's own markup do not need it.
+    const esc = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/`/g, '&#96;');
+
+    const jBadge = (lvl) => {
+        const l = esc((lvl || 'NONE').toUpperCase());
+        return `<span class="journal-active-${l.toLowerCase()} j-badge">${l.charAt(0)}</span>`;
+    };
+
+    function formatPrimitive(val) {
+        if (typeof val === 'boolean') return val ? '<span class="text-2xx">TRUE</span>' : '<span class="text-dim">FALSE</span>';
+        if (val == null) return '--';
+        return esc(val);
+    }
+
+    const panelHeader = (kind, title) => `
+        <div class="panel-header-container">
+            <div class="panel-title">
+                <span style="color: var(--dim); font-weight: 300;">${kind} //</span> ${title}
+            </div>
+            <button class="panel-close-btn" data-action="close">
+                <span class="panel-close-icon">←</span> BACK
+            </button>
+        </div>`;
+
+    // ==========================================================================
+    // Navigation: the open view lives in the URL hash, so a reload keeps it, the browser's back
+    // button closes it, and a link to one route can be handed to a colleague.
+    // ==========================================================================
+    const slider = document.getElementById('view-slider');
+    const liveEl = document.getElementById('details-live');
+    const staticEl = document.getElementById('details-content');
+    let currentView = null;   // {kind: 'route'|'system'|'config', id}
+    let staticKey = null;     // what the configuration part was last rendered for
+
+    function viewFromHash() {
+        const m = location.hash.match(/^#\/(route|system|config)(?:\/(.*))?$/);
+        if (!m) return null;
+        return {kind: m[1], id: m[2] != null ? decodeURIComponent(m[2]) : null};
+    }
+
+    function openView(kind, id) {
+        location.hash = id != null ? `#/${kind}/${encodeURIComponent(id)}` : `#/${kind}`;
+    }
+
+    function closeDetails() {
+        if (location.hash) {
+            history.pushState(null, '', location.pathname + location.search);
+        }
+        applyView();
+    }
+
+    function applyView() {
+        const next = viewFromHash();
+        const changed = JSON.stringify(next) !== JSON.stringify(currentView);
+        currentView = next;
+        if (!next) {
+            slider.classList.remove('show-details-view');
+            staticKey = null;
+            return;
+        }
+        if (changed) {
+            staticKey = null;
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+        slider.classList.add('show-details-view');
+        renderDetails();
+    }
+
+    window.addEventListener('hashchange', applyView);
+    window.addEventListener('popstate', applyView);
+
+    // Route rows carry their id as data, not inside an inline onclick: an id is config text, and
+    // inside a JavaScript string literal in an attribute a quote in it would end the string.
+    // No inline handlers at all, static ones included: the Content-Security-Policy allows this
+    // page's one script block by hash, and inline handlers would need 'unsafe-inline'.
+    const actions = {config: () => openView('config'), close: closeDetails, system: () => openView('system')};
+    document.addEventListener('click', (event) => {
+        const action = event.target.closest('[data-action]');
+        if (action && actions[action.dataset.action]) {
+            actions[action.dataset.action]();
+            return;
+        }
+        const row = event.target.closest('[data-route-id]');
+        if (row) {
+            event.preventDefault();
+            openView('route', row.dataset.routeId);
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && slider.classList.contains('show-details-view')) {
+            closeDetails();
+        }
+    });
+
+    function renderDetails() {
+        const data = window.currentData;
+        if (!data || !currentView) return;
+
+        let view;
+        if (currentView.kind === 'route') view = routeView(currentView.id);
+        else if (currentView.kind === 'system') view = systemView();
+        else view = configView();
+        if (!view) return;
+
+        const scrollPos = window.scrollY;
+        liveEl.innerHTML = view.live;
+        if (view.staticKey !== staticKey) {
+            staticEl.innerHTML = view.static || '';
+            staticKey = view.staticKey;
+        }
+        if (view.afterRender) view.afterRender();
+        window.scrollTo(0, scrollPos);
+    }
+
+    // Changes whenever routes.yaml is reloaded, which is when configuration panels must redraw.
+    function configRevision(data) {
+        return `${data.route_version}|${data.route_source_digest}|${data.route_source?.loaded_at}`;
+    }
+
+    // ==========================================================================
+    // Reload status
+    // ==========================================================================
+    function renderReloadBanner(data) {
+        const banner = document.getElementById('reload-banner');
+        const src = data.route_source;
+        if (!src || !src.rejected_at) {
+            banner.classList.remove('visible');
+            return;
+        }
+        banner.innerHTML = `
+            <strong>ROUTES.YAML CHANGE REJECTED</strong> ${esc(timeAgo(src.rejected_at))} -
+            the file was edited but did not load, so the gateway is still running version
+            <strong>${esc(data.route_version || 'unversioned')}</strong>, loaded ${esc(new Date(src.loaded_at).toLocaleString())}.
+            What is shown below is what is running, not what is on disk. The reason is in the gateway log.`;
+        banner.classList.add('visible');
+    }
+
+    // ==========================================================================
+    // Gateway health: the same roll-up /health and /ready report
+    // ==========================================================================
+    // The server renders every 2s; a rendered_at that stops moving means its housekeeping has
+    // stalled, which /health reports as DOWN. Compared with the last change seen rather than the
+    // browser's clock, which need not agree with the gateway's.
+    const STALE_AFTER_MS = 10000;
+    let lastRenderedAt = null;
+    let lastRenderedChangeAt = 0;
+
+    function setHealthBadge(health, title) {
+        const badge = document.getElementById('gateway-health');
+        badge.className = `tag ${HEALTH_TAG_CLASS[health] || 'tag-down'}`;
+        badge.textContent = health;
+        badge.title = title;
+    }
+
+    function renderGatewayHealth(data) {
+        const list = document.getElementById('health-problems');
+        const now = performance.now();
+        if (data.rendered_at !== lastRenderedAt) {
+            lastRenderedAt = data.rendered_at;
+            lastRenderedChangeAt = now;
+        }
+        if (now - lastRenderedChangeAt > STALE_AFTER_MS) {
+            setHealthBadge('STALE', `No new data since ${new Date(lastRenderedAt).toLocaleString()}: the gateway's housekeeping has stalled`);
+            list.classList.remove('visible');
+            return;
+        }
+        const health = data.health || {health: 'OK', problems: []};
+        const problems = health.problems || [];
+        setHealthBadge(health.health, problems.length
+            ? `${problems.length} component${problems.length === 1 ? '' : 's'} not OK`
+            : 'Every filter and upstream reports OK');
+        // A rejected routes.yaml has its own banner below. It is the one problem with neither a
+        // route nor a position: a root filter has a position, so a custom filter that happens
+        // to be named routes.yaml is still listed.
+        const shown = problems.filter(p => !(p.route == null && p.position == null && p.component === 'routes.yaml'));
+        if (!shown.length) {
+            list.classList.remove('visible');
+            return;
+        }
+        list.innerHTML = shown.map(p => {
+            // A group's filter is reported under the group's id, which has no page of its own
+            const isRoute = p.route != null && (data.route_configs || []).some(r => r.id === p.route);
+            const where = isRoute
+                ? `<a href="#/route/${esc(encodeURIComponent(p.route))}" data-route-id="${esc(p.route)}">${esc(p.route)}</a>`
+                : p.route != null ? `<span class="text-dim">group ${esc(p.route)}</span>` : '<span class="text-dim">root</span>';
+            const component = p.position ? `${esc(p.component)} (#${esc(p.position)})` : esc(p.component);
+            return `<div><span class="tag ${HEALTH_TAG_CLASS[p.health] || ''}">${esc(p.health)}</span> ${where} / ${component}${p.detail ? ` <span class="text-dim">- ${esc(p.detail)}</span>` : ''}</div>`;
+        }).join('');
+        list.classList.add('visible');
+    }
+
+    // ==========================================================================
+    // Configuration view: server.yaml
+    // ==========================================================================
+    const humanKey = (k) => esc(String(k).replace(/_/g, ' ').toUpperCase());
+
+    // Paths and URLs are longer than a panel is wide; the full value stays in the tooltip.
+    const longText = (text, maxWidth = '220px') =>
+        `<span class="text-truncate" style="display: inline-block; max-width: ${maxWidth}; vertical-align: bottom;" title="${esc(text)}">${esc(text)}</span>`;
+
+    // Leaf values as server.yaml would spell them: sizes, durations, lists. Numbers are left
+    // unformatted - a port or a thread count with a thousands separator is not what the file says.
+    function formatConfigValue(val) {
+        if (val == null) return '<span class="text-dim">--</span>';
+        if (typeof val === 'boolean') return formatPrimitive(val);
+        if (typeof val === 'number') return esc(String(val));
+        if (typeof val === 'string') {
+            if (/^PT[\d.HMS]+$/.test(val)) return esc(formatDuration(val));
+            return val.length > 28 ? longText(val) : esc(val);
+        }
+        if (Array.isArray(val)) {
+            return val.length === 0 ? '<span class="text-dim">NONE</span>' : val.map(esc).join(', ');
+        }
+        if (typeof val === 'object' && typeof val.bytes === 'number' && Object.keys(val).length === 1) {
+            return formatBytes(val.bytes);
+        }
+        return esc(JSON.stringify(val));
+    }
+
+    const isNested = (v) => v && typeof v === 'object' && !Array.isArray(v)
+        && !(typeof v.bytes === 'number' && Object.keys(v).length === 1);
+
+    // Rendered from whatever ServerConfig serializes to, rather than a hand-kept list of fields,
+    // so an option added to server.yaml shows up here without anyone remembering to add it.
+    // Values that differ from ServerConfig.standard() are marked: "what did we change" is the
+    // usual question, and the answer is otherwise a diff against docs/config.md.
+    function configRows(obj, defaults, depth) {
+        let html = '';
+        for (const [key, val] of Object.entries(obj || {})) {
+            const def = defaults ? defaults[key] : undefined;
+            if (isNested(val)) {
+                html += `<div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px; padding-left: ${depth * 8}px;">${humanKey(key)}</div>`;
+                html += configRows(val, def, depth + 1);
+                continue;
+            }
+            const changed = defaults !== undefined && JSON.stringify(val) !== JSON.stringify(def);
+            const cls = changed ? 'cfg-changed' : '';
+            const title = changed ? ` title="default: ${esc(def === undefined ? 'n/a' : JSON.stringify(def))}"` : '';
+            html += `<div${title} style="padding-left: ${depth * 8}px;">${mRow(humanKey(key), formatConfigValue(val), false, cls)}</div>`;
+        }
+        return html;
+    }
+
+    function configView() {
+        const data = window.currentData;
+        const sys = data.system;
+        const cfg = sys.configuration || {};
+        const defaults = sys.configuration_defaults;
+        const mem = sys.memory || null;
+        const src = data.route_source || {};
+
+        const live = `
+        ${panelHeader('SYSTEM', 'CONFIGURATION')}
+
+        <div class="panel-section">
+            <div class="panel-section-title">Environment</div>
+            ${mRow('VERSION', esc(sys.version), true)}
+            ${mRow('STARTED AT', new Date(sys.started_at).toLocaleString(), false)}
+            ${mRow('UPTIME', formatUptime(sys.uptime), false)}
+            ${mRow('ROUTES LOADED', timeAgo(src.loaded_at), false)}
+            ${mRow('LAST RELOAD', src.rejected_at ? `<span class="text-warn">REJECTED ${timeAgo(src.rejected_at)}</span>` : '<span class="text-2xx">OK</span>', false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Resource Pressure</div>
+            ${mem ? `
+                ${mRow('HEAP MEMORY',
+            `<span class="${getPressureClass(mem.heap_used, mem.heap_max)}">${formatBytes(mem.heap_used)}</span>`,
+            true, '', formatBytes(mem.heap_max) + ' MAX')}
+                ${mRow('DIRECT MEMORY (NIO)',
+            formatBytes(mem.direct_used),
+            false, '', mem.direct_max > 0 ? formatBytes(mem.direct_max) + ' MAX' : 'UNLIMITED')}
+                ${mRow('FILE DESCRIPTORS',
+            `<span class="${getPressureClass(mem.open_fds, mem.max_fds)}">${mem.open_fds.toLocaleString()}</span>`,
+            false, '', mem.max_fds > 0 ? mem.max_fds.toLocaleString() + ' MAX' : '--')}
+                ${mRow('TOTAL GC TIME', mem.gc_time_ms.toLocaleString() + ' ms', false, '', formatGcActivity())}
+                ${mRow('JOURNAL DISK FREE', data.journaling?.available_space != null ? formatBytes(data.journaling.available_space) : '--', false)}
+            ` : `<div class="sub text-dim" style="padding: 4px;">Resource data pending...</div>`}
+        </div>`;
+
+        let sections = '';
+        for (const [key, val] of Object.entries(cfg)) {
+            const body = isNested(val)
+                ? configRows(val, defaults ? defaults[key] : undefined, 0)
+                : mRow(humanKey(key), formatConfigValue(val), false);
+            sections += `<div class="panel-section"><div class="panel-section-title">${humanKey(key)}</div>${body}</div>`;
+        }
+
+        const stat = `
+        <div class="group-heading">CONFIGURATION FILES</div>
+        <div class="panel-section" style="column-span: all;">
+            <div class="panel-section-title">Sources</div>
+            ${mRow('ROUTES', `<span class="text-dim">${longText(src.file || '--', '60vw')}</span>`, true)}
+            ${mRow('ROUTES VERSION', esc(data.route_version || 'unversioned'), false)}
+            ${mRow('ROUTES SOURCE DIGEST', data.route_source_digest ? `<span class="text-dim">sha256:${longText(data.route_source_digest, '60vw')}</span>` : '--', true)}
+            ${mRow('ROUTES LOADED AT', src.loaded_at ? esc(new Date(src.loaded_at).toLocaleString()) : '--', false)}
+            ${mRow('SERVER', sys.configuration_file ? `<span class="text-dim">${longText(sys.configuration_file, '60vw')}</span>` : '<span class="text-dim">NONE - BUILT-IN DEFAULTS</span>', true)}
+            <div class="muted-note">
+                routes.yaml is reloaded when it changes; server.yaml is read once at startup, so what is shown
+                below is the file as it was when the gateway started. Values that differ from the built-in
+                defaults are <span class="cfg-changed">marked</span>; hover one to see its default.
+            </div>
+        </div>
+        <div class="group-heading">SERVER.YAML (EFFECTIVE)</div>
+        ${sections}`;
+
+        return {live, static: stat, staticKey: 'config|' + configRevision(data)};
+    }
+
+    // ==========================================================================
+    // Charts
+    // ==========================================================================
+
+    // Weighted Moving Average smoothing kernel (1-2-1)
+    function smoothArray(arr, isEnabled) {
+        if (!isEnabled || arr.length < 3) return arr;
+        const res = new Array(arr.length);
+        res[0] = arr[0];
+        for (let i = 1; i < arr.length - 1; i++) {
+            res[i] = (arr[i-1] + arr[i]*2 + arr[i+1]) / 4;
+        }
+        res[arr.length - 1] = arr[arr.length - 1];
+        return res;
+    }
+
+    function drawStackedSparkline(canvas, data, options = { showYAxis: false, smooth: true, latency: null }) {
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+
+        if (canvas.width !== rect.width * dpr) {
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+        }
+
+        const logicalWidth = rect.width;
+        const logicalHeight = rect.height;
+        const labelHeight = 18;
+        const chartHeight = logicalHeight - labelHeight;
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, logicalWidth, logicalHeight);
+
+        const metadata = data.metadata;
+
+        // Apply WMA smoothing to eliminate sampling jitter
+        const successData = smoothArray(data?.success || [], options.smooth);
+        const clientData = smoothArray(data?.client_error || [], options.smooth);
+        const serverData = smoothArray(data?.server_error || [], options.smooth);
+
+        const capacity = metadata.capacity;
+
+        let maxValue = 0;
+        [successData, clientData, serverData].forEach(arr => {
+            arr.forEach(v => { if (v > maxValue) maxValue = v; });
+        });
+
+        // Determine state
+        const isSystemSilent = maxValue === 0;
+        const displayMax = maxValue * 1.1; // 10% Headroom
+
+        // 1. Grid and Labels
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = (chartHeight / 4) * i;
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(logicalWidth, y); ctx.stroke();
+            const x = (logicalWidth / 4) * i;
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, chartHeight); ctx.stroke();
+        }
+
+        ctx.font = '600 11px ui-monospace, "Roboto Mono", monospace';
+        const intervalSec = (parseDurationMs(metadata.interval) / 1000) || 1;
+
+        // Draw the explicit Y Axis labels if requested (For the Detail Graph)
+        if (options.showYAxis && maxValue > 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+
+            // Peak requests per second based on the highest point
+            const maxRps = (maxValue / intervalSec).toFixed(1);
+            ctx.fillText(`PEAK: ${maxRps} req/s`, 4, 4);
+
+            // Draw a subtle dashed ceiling line at the exact peak value
+            ctx.beginPath();
+            const yLine = chartHeight - ((maxValue / displayMax) * chartHeight);
+            ctx.moveTo(0, yLine);
+            ctx.lineTo(logicalWidth, yLine);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]); // reset for next strokes
+        }
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'; // 0.7 Opacity
+        const timeVal = (capacity * intervalSec) >= 60 ? `${Math.round((capacity * intervalSec) / 60)}m` : `${capacity * intervalSec}s`;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`-${timeVal}`, 2, logicalHeight - 5);
+        ctx.textAlign = 'right'; ctx.fillText('now', logicalWidth - 2, logicalHeight - 5);
+
+        if (isSystemSilent) {
+            ctx.textAlign = 'center';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillText('AWAITING TELEMETRY', logicalWidth / 2, (chartHeight / 2) + 5);
+            ctx.restore();
+            return;
+        }
+
+        // 2. Drawing Logic
+        const stepX = logicalWidth / (capacity - 1);
+
+        const renderPath = (dataArray, color, isSuccess = false) => {
+            if (!dataArray.length) return;
+
+            // Create Path
+            const linePath = new Path2D();
+            let isDrawing = false;
+
+            for (let i = 0; i < dataArray.length; i++) {
+                const val = Number(dataArray[i]) || 0;
+                const x = i * stepX;
+                const y = chartHeight - ((val / displayMax) * chartHeight);
+
+                if (val > 0) {
+                    if (!isDrawing) {
+                        linePath.moveTo(x, y);
+                        isDrawing = true;
+                    } else {
+                        linePath.lineTo(x, y);
+                    }
+                } else {
+                    isDrawing = false;
+                }
+            }
+
+            // Draw the Fill for Success only
+            if (isSuccess) {
+                const fillPath = new Path2D(linePath);
+                // Close the path to the bottom
+                fillPath.lineTo(logicalWidth, chartHeight);
+                fillPath.lineTo(0, chartHeight);
+                fillPath.closePath();
+
+                const grad = ctx.createLinearGradient(0, 0, 0, chartHeight);
+                grad.addColorStop(0, 'rgba(46, 204, 113, 0.15)');
+                grad.addColorStop(1, 'rgba(46, 204, 113, 0)');
+                ctx.fillStyle = grad;
+                ctx.fill(fillPath);
+            }
+
+            // Draw the Line
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke(linePath);
+        };
+
+        renderPath(successData, '#2ecc71', true);
+        renderPath(clientData, '#f39c12', true);
+        renderPath(serverData, '#e74c3c', true);
+
+        // p99 on its own scale (right-hand label): request rate and response time share the time
+        // axis, which is what makes "it got slow when traffic spiked" visible at a glance.
+        const latency = options.latency;
+        if (latency && latency.length === capacity) {
+            const maxLatency = Math.max(...latency);
+            if (maxLatency > 0) {
+                const latencyMax = maxLatency * 1.1;
+                const path = new Path2D();
+                let drawing = false;
+                for (let i = 0; i < latency.length; i++) {
+                    const v = latency[i];
+                    if (!v) { drawing = false; continue; }
+                    const x = i * stepX;
+                    const y = chartHeight - (v / latencyMax) * chartHeight;
+                    if (!drawing) { path.moveTo(x, y); drawing = true; } else { path.lineTo(x, y); }
+                }
+                ctx.strokeStyle = 'rgba(192, 132, 252, 0.9)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([3, 3]);
+                ctx.stroke(path);
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(192, 132, 252, 0.9)';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'top';
+                ctx.fillText(`p99 PEAK: ${formatMicros(maxLatency)}`, logicalWidth - 4, 4);
+            }
+        }
+
+        ctx.restore();
+    }
+
+    // ==========================================================================
+    // Route view
+    // ==========================================================================
+    function buildMatchTree(node, isRoot = false) {
+        if (!node) return '<div class="sub text-dim">No predicates: this route matches nothing on its own (reachable only as a fallback).</div>';
+
+        // Silently unwrap the implicit root conjunction of a route's match list
+        const isAnd = node.name === 'AndPredicate' || node.name === 'and';
+        if (isRoot && isAnd && node.children && node.children.length > 0) {
+            return node.children.map(child => buildMatchTree(child, false)).join('');
+        }
+
+        let displayText = node.summary || node.name;
+        if (displayText.startsWith(node.name + ': ')) {
+            displayText = displayText.substring(node.name.length + 2);
+        } else if (displayText === node.name) {
+            displayText = '';
+        }
+
+        let html = `
+    <div style="margin-left: 8px; padding-left: 16px; border-left: 2px solid rgba(128,128,128,0.2); margin-top: 6px; position: relative;">
+        <div style="position: absolute; left: 0; top: 10px; width: 12px; border-top: 2px solid rgba(128,128,128,0.2);"></div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-weight: 300; font-size: 0.8rem; background: rgba(0, 168, 255, 0.08); padding: 2px 6px; border-radius: 4px;">${esc(node.name)}</span>
+            ${displayText ? `<span class="text-dim text-truncate" title="${esc(displayText)}">${esc(displayText)}</span>` : ''}
+        </div>`;
+
+        if (node.children && node.children.length > 0) {
+            node.children.forEach(child => {
+                html += buildMatchTree(child, false);
+            });
+        }
+        html += `</div>`;
+        return html;
+    }
+
+    // Flattens the onion the backend sends into the route's filters in declaration order, each
+    // with its phases, and pairs the route's own filters with their (masked) arguments.
+    function flattenFilters(config) {
+        const nodes = [];
+        let curr = config.filter_nodes;
+        while (curr) {
+            if (curr.on_client_request || curr.on_upstream_request || curr.on_client_response || curr.on_completed || curr.child) {
+                nodes.push(curr);
+            }
+            curr = curr.child;
+        }
+        const own = config.filters || [];
+        let ownIndex = 0;
+        return nodes.map(n => {
+            const ownFilter = n.level === 'route';
+            const args = ownFilter && own[ownIndex] && own[ownIndex].name === n.name ? own[ownIndex].args : undefined;
+            if (ownFilter) ownIndex++;
+            let summary = n.summary || '';
+            if (summary.startsWith(n.name + ': ')) summary = summary.substring(n.name.length + 2);
+            else if (summary.startsWith(n.name)) summary = summary.substring(n.name.length).trim();
+            return {name: n.name, level: n.level, summary, args, status: n.status, node: n};
+        });
+    }
+
+    // A root or group filter is one instance shared by every route beneath where it is declared
+    const LEVEL_TAGS = {
+        root: ' <span class="tag" title="Declared at the root of routes.yaml: one instance for the gateway">ROOT</span>',
+        group: ' <span class="tag" title="Declared on the route\'s group: one instance for the group\'s routes">GROUP</span>'
+    };
+    const globalTag = (f) => LEVEL_TAGS[f.level] || '';
+
+    // What a filter or the upstream reports about itself (StatusReporting): OK, WARN or ERROR
+    const HEALTH_TAG_CLASS = {OK: 'tag-up', WARN: 'tag-warn', ERROR: 'tag-down'};
+    const healthStatusTag = (status) => status
+        ? ` <span class="tag ${HEALTH_TAG_CLASS[status.health] || ''}"${status.detail ? ` title="${esc(status.detail)}"` : ''}>${esc(status.health)}</span>`
+        : '';
+    // Only what needs attention, where the whole pipeline is shown at once
+    const problemTag = (status) => status && status.health !== 'OK' ? healthStatusTag(status) : '';
+
+    // The worst status any filter or the upstream of a route reports, or null when none reports
+    function worstStatus(config) {
+        const rank = {OK: 0, WARN: 1, ERROR: 2};
+        let worst = null;
+        let count = 0;
+        for (let n = config.filter_nodes; n; n = n.child) {
+            if (!n.status) continue;
+            if (!worst || rank[n.status.health] > rank[worst]) {
+                worst = n.status.health;
+                count = 0;
+            }
+            if (n.status.health === worst) count++;
+        }
+        return worst ? {health: worst, count} : null;
+    }
+
+    function buildPipelinePhasesHtml(config, filters) {
+        const phases = {clientReq: [], upstreamReq: [], clientRes: [], completed: []};
+        filters.forEach(f => {
+            if (f.node.on_client_request) phases.clientReq.push(f);
+            if (f.node.on_upstream_request) phases.upstreamReq.push(f);
+            if (f.node.on_client_response) phases.clientRes.unshift(f);
+            if (f.node.on_completed) phases.completed.unshift(f);
+        });
+
+        const renderPhase = (title, items, icon, bgColor) => {
+            if (items.length === 0) return '';
+            let html = `<div style="margin-bottom: 16px;">`;
+            html += `<div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 300; font-size: 0.8em; letter-spacing: 0.5px;">${icon} ${title}</div>`;
+            items.forEach(f => {
+                html += `<div class="filter-item"><span class="filter-name" style="background: ${bgColor};">${esc(f.name)}</span>${globalTag(f)}${problemTag(f.status)}</div>`;
+            });
+            html += `</div>`;
+            return html;
+        };
+
+        const upstream = config.upstream;
+        const target = upstream
+            ? upstream.targets.map(t => `<div class="filter-item"><span style="font-weight: 600; background: rgba(232, 65, 24, 0.08); padding: 2px 6px; border-radius: 4px; display: inline-block;">${esc(t)}</span></div>`).join('')
+            : `<div class="filter-item text-dim" style="font-size: 0.85em;">No upstream: the response comes from this route's filters.</div>`;
+
+        let html = '<div style="font-family: monospace; font-size: 0.9em; padding: 12px; background: rgba(0,0,0,0.1); border-radius: 6px;">';
+        html += renderPhase('CLIENT REQUEST', phases.clientReq, '↓', 'rgba(162, 155, 254, 0.08)');
+        html += renderPhase('UPSTREAM REQUEST', phases.upstreamReq, '↓', 'rgba(116, 185, 255, 0.08)');
+        html += `<div style="margin-bottom: 16px;">
+            <div class="sub text-dim" style="border-bottom: 1px solid rgba(128,128,128,0.2); margin-bottom: 8px; padding-bottom: 4px; font-weight: 600; font-size: 0.8em; letter-spacing: 0.5px;">◆ TARGET</div>
+            ${target}
+        </div>`;
+        html += renderPhase('CLIENT RESPONSE', phases.clientRes, '↑', 'rgba(253, 203, 110, 0.08)');
+        html += renderPhase('COMPLETED', phases.completed, '↑', 'rgba(0, 184, 148, 0.08)');
+        html += '</div>';
+        return html;
+    }
+
+    function buildFilterConfigHtml(filters) {
+        if (filters.length === 0) return '<div class="sub text-dim">No filters.</div>';
+        return filters.map((f, i) => {
+            const hasArgs = f.args && typeof f.args === 'object' && Object.keys(f.args).length > 0;
+            return `
+            <div style="margin-bottom: 10px;">
+                <div><span class="route-order">${i + 1}.</span><span class="filter-name" style="background: rgba(128,128,128,0.1);">${esc(f.name)}</span>${globalTag(f)}${healthStatusTag(f.status)}</div>
+                ${f.summary ? `<div class="filter-summary" style="margin: 2px 0 0 22px;">${esc(f.summary)}</div>` : ''}
+                ${f.status ? statusDetailHtml(f.status) : ''}
+                ${hasArgs ? `<details class="filter-args" style="margin-left: 22px;"><summary>CONFIG</summary><pre>${esc(JSON.stringify(f.args, null, 2))}</pre></details>` : ''}
+            </div>`;
+        }).join('') + `<div class="muted-note">Secrets and header values outside the journal's safe-header list are shown masked or as fingerprints.</div>`;
+    }
+
+    function statusDetailHtml(status) {
+        const values = Object.entries(status.values || {}).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(', ');
+        const line = [status.detail ? esc(status.detail) : '', values].filter(Boolean).join(' · ');
+        return line ? `<div class="filter-summary" style="margin: 2px 0 0 22px;">${line}</div>` : '';
+    }
+
+    function healthTag(routeId, target) {
+        const states = window.currentData?.upstream_health?.[routeId];
+        // Absent only when a reload landed between the configuration and health snapshots.
+        if (!states || !(target in states)) return '<span class="tag">UNCHECKED</span>';
+        return states[target] ? '<span class="tag tag-up">UP</span>' : '<span class="tag tag-down">DOWN</span>';
+    }
+
+    function buildUpstreamHtml(config) {
+        const u = config.upstream;
+        if (!u) {
+            return `<div class="sub text-dim">None. Requests are answered by the route's filters (static content, fixed responses, redirects).</div>`;
+        }
+        const hc = u.health_check;
+        const targets = u.targets.map(t => `
+            <div class="sub metric-row" style="display: flex; align-items: baseline;">
+                <span class="metric-label text-truncate" title="${esc(t)}">${esc(t)}</span>
+                <span class="metric-leader"></span>
+                <span data-health-target="${esc(t)}">${hc ? healthTag(config.id, t) : '<span class="tag" title="No health_check: always in rotation">ALWAYS ON</span>'}</span>
+            </div>`).join('');
+        return `
+            ${mRow('TARGETS', u.targets.length, true)}
+            ${targets}
+            <div class="spacer-sm"></div>
+            ${mRow('READ TIMEOUT', formatDuration(u.read_timeout), false)}
+            ${mRow('CONNECT TIMEOUT', formatDuration(u.connect_timeout), false)}
+            ${mRow('HOST HEADER', u.preserve_host ? 'CLIENT\'S (PRESERVED)' : 'TARGET\'S', false)}
+            ${hc ? `
+                ${mRow('HEALTH CHECK', `GET ${esc(hc.path)} every ${formatDuration(hc.interval)}`, false)}
+                ${mRow('DOWN AFTER / UP AFTER', `${hc.fall} / ${hc.rise} probes`, false)}
+                ${hc.override && hc.override !== 'NONE' ? mRow('OVERRIDE', `<span class="text-warn">${esc(hc.override)}</span>`, false) : ''}
+            ` : mRow('HEALTH CHECK', '<span class="text-dim">NONE</span>', false)}
+            ${mRow('FALLBACK ROUTE', u.fallback_route_id
+            ? `<a href="#/route/${encodeURIComponent(u.fallback_route_id)}" style="color: var(--fg);">${esc(u.fallback_route_id)}</a>`
+            : '<span class="text-dim">NONE</span>', false)}`;
+    }
+
+    // A rule's failures since the configuration was loaded, counted on every route it applies to,
+    // whether or not the exchange was journaled.
+    function ruleErrorsHtml(count) {
+        return count > 0
+            ? `<span class="text-err" title="times this rule could not be evaluated and did not fire, since the configuration was loaded">${count.toLocaleString()} rule ${count === 1 ? 'error' : 'errors'}</span>`
+            : '';
+    }
+
+    // The counts change while the configuration panel stays put, so only they are refreshed.
+    function refreshRuleErrors(journal) {
+        const rules = journal?.rules || [];
+        document.querySelectorAll('[data-rule-errors]').forEach(el => {
+            const rule = rules.find(r => `${r.stage}|${r.path}` === el.dataset.ruleErrors);
+            const html = ruleErrorsHtml(rule ? rule.rule_errors : 0);
+            if (el.innerHTML !== html) el.innerHTML = html;
+        });
+    }
+
+    // Health changes while the configuration panels stay put, so only the tags are refreshed.
+    function refreshHealthTags(routeId) {
+        document.querySelectorAll('[data-health-target]').forEach(el => {
+            const html = healthTag(routeId, el.dataset.healthTarget);
+            if (el.innerHTML !== html) el.innerHTML = html;
+        });
+    }
+
+    function buildJournalHtml(config, storageBytes) {
+        const buildPills = (activeLevel) => {
+            const levels = ['NONE', 'METADATA', 'HEADERS', 'FULL'];
+            return `<div class="pill-group">` +
+                levels.map(lvl => {
+                    const activeClass = lvl === activeLevel ? ` journal-active-${lvl.toLowerCase()}` : '';
+                    return `<span class="journal-tag${activeClass}">${lvl}</span>`;
+                }).join('') + `</div>`;
+        };
+
+        const buildCap = (bytes) => bytes == null ? ''
+            : `<div class="sub text-dim" style="margin-top: 4px;">body capped at ${esc(formatBytes(bytes))} at FULL</div>`;
+
+        // Rules that take precedence for a key when they match: earlier rules of the stage, and
+        // on_response rules over on_request ones. Only "may": whether one condition
+        // covers another cannot be decided, and the journal says per exchange which rule fired.
+        const buildMayBeOverridden = (byKey) => {
+            const entries = Object.entries(byKey || {});
+            if (entries.length === 0) return '';
+            const text = entries.map(([key, labels]) => `${esc(key)} by ${labels.map(esc).join(', ')}`).join('; ');
+            return `<span style="font-size: 0.85em;" title="rules that take precedence for this key when they match: earlier rules of its stage, and for on_request every on_response rule naming it">may be overridden for ${text}</span>`;
+        };
+
+        const buildRules = (rules) => {
+            if (!rules || rules.length === 0) return '';
+            let html = '<div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RULES:</div>';
+            html += '<div style="padding-left: 8px; border-left: 2px solid rgba(128,128,128,0.2);">';
+            rules.forEach(rule => {
+                const sets = [];
+                if (rule.request) sets.push(`request ${jBadge(rule.request)} ${esc(rule.request)}`);
+                if (rule.request_truncate_body_at != null) sets.push(`request body capped at ${esc(formatBytes(rule.request_truncate_body_at))}`);
+                if (rule.response) sets.push(`response ${jBadge(rule.response)} ${esc(rule.response)}`);
+                if (rule.response_truncate_body_at != null) sets.push(`response body capped at ${esc(formatBytes(rule.response_truncate_body_at))}`);
+                html += `<div class="sub text-dim" style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;" title="${esc(rule.path)}">
+                <span style="font-size: 0.85em;">${esc(rule.stage)}</span>
+                <span style="font-size: 0.85em;">${esc(rule.label)}</span>
+                <span style="font-size: 0.85em;">${sets.join(', ')}</span>
+                <span style="font-size: 0.85em;" data-rule-errors="${esc(rule.stage)}|${esc(rule.path)}">${ruleErrorsHtml(rule.rule_errors)}</span>
+                ${buildMayBeOverridden(rule.may_be_overridden_by)}
+            </div>`;
+            });
+            html += '</div>';
+            return html;
+        };
+
+        return `
+            <div class="panel-subtitle" style="margin-bottom: 4px;">REQUEST:</div>
+            ${buildPills(config.journal?.request_level || 'NONE')}
+            ${buildCap(config.journal?.request_truncate_body_at)}
+            <div class="panel-subtitle" style="margin-top: 12px; margin-bottom: 4px;">RESPONSE:</div>
+            ${buildPills(config.journal?.response_level || 'NONE')}
+            ${buildCap(config.journal?.response_truncate_body_at)}
+            ${buildRules(config.journal?.rules)}`;
+    }
+
+    function routeView(routeId) {
+        const data = window.currentData;
+        const config = window.currentConfigs[routeId];
+        if (!config) {
+            return {
+                live: `${panelHeader('ROUTE', esc(routeId))}<div class="panel-section"><div class="sub text-warn">This route is not in the running configuration (renamed or removed in routes.yaml?).</div></div>`,
+                static: '', staticKey: 'missing|' + routeId
+            };
+        }
+
+        const metrics = window.currentMetrics[routeId] || ZERO_METRICS;
+        const t = metrics.traffic_flow;
+        const s = metrics.request_statistics;
+        const p = metrics.performance_telemetry;
+        const lat = metrics.latency;
+        const spark = metrics.sparkline_data;
+        const win = windowStats(spark);
+        const wl = windowLabel(spark);
+        const routeCount = (data.route_configs || []).length;
+
+        const st2xx = sumStatuses(s.client_statuses, 200, 299);
+        const st3xx = sumStatuses(s.client_statuses, 300, 399);
+        const err4xx = sumStatuses(s.client_statuses, 400, 499);
+        const err5xx = sumStatuses(s.client_statuses, 500, 599);
+        const wsActive = s.websocket_active || 0;
+        const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
+
+        const generateStatusRows = (statusMap) => {
+            if (!statusMap || Object.keys(statusMap).length === 0) {
+                return `<div class="sub text-muted" style="padding: 4px 4px;">No statuses recorded.</div>`;
+            }
+            return Object.entries(statusMap).map(([code, count]) => {
+                const codeNum = parseInt(code, 10);
+                const colorClass = codeNum >= 500 ? 'text-err' : (codeNum >= 400 ? 'text-warn' : '');
+                return mRow(`HTTP ${esc(code)}`, count.toLocaleString(), false, colorClass);
+            }).join('');
+        };
+
+        const measured = isMeasured(config);
+        const live = `
+        ${panelHeader('ROUTE', `<span class="route-order">#${config.order}</span>${esc(routeId)}`)}
+        ${measured ? '' : `<div class="panel-section" style="column-span: all;"><div class="sub text-warn">${NOT_MEASURED} Until it is, the figures below do not change.</div></div>`}
+
+        <div class="group-heading">PERFORMANCE · LAST ${wl}</div>
+
+        <div class="panel-section" style="column-span: all; padding-bottom: 0.5rem;">
+            <div class="panel-section-title" style="margin-bottom: 12px; border: none; padding-bottom: 0; display: flex; justify-content: space-between; align-items: flex-end;">
+                <span>TRAFFIC &amp; RESPONSE TIME</span>
+                <span class="text-dim" style="font-size: 0.8em; letter-spacing: 0;">
+                    <span style="color: #2ecc71;">━</span> 2xx
+                    <span style="color: #f39c12;">━</span> 4xx
+                    <span style="color: #e74c3c;">━</span> 5xx
+                    <span style="color: #c084fc;">┅</span> p99
+                </span>
+            </div>
+            <div style="width: 100%; height: 180px; position: relative; margin-bottom: 1rem;">
+                <canvas id="detail-canvas" style="width: 100%; height: 100%; display: block;"></canvas>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Now (last ${wl})</div>
+            ${mRow('REQUESTS', win.total.toLocaleString(), true, '', win.avgRps.toFixed(1) + PER_SEC)}
+            ${mRow('4xx', formatPct(win.pct4, win.total), false, win.pct4 > 0 ? 'text-warn' : '')}
+            ${mRow('5xx', formatPct(win.pct5, win.total), false, errorPctClass(win.pct5))}
+            <div class="spacer-sm"></div>
+            ${mRow('P50 RESPONSE TIME', formatMicros(lat?.p50_micros), false, latencyClass(lat?.p50_micros))}
+            ${mRow('P95 RESPONSE TIME', formatMicros(lat?.p95_micros), false, latencyClass(lat?.p95_micros))}
+            ${mRow('P99 RESPONSE TIME', formatMicros(lat?.p99_micros), false, latencyClass(lat?.p99_micros))}
+            <div class="spacer-sm"></div>
+            ${mRow('HTTP ACTIVE', s.active, false, s.active > 0 ? 'text-http' : '')}
+            ${mRow('WEBSOCKET ACTIVE', wsActive, false, wsActive > 0 ? 'text-ws' : '')}
+            ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Lifetime</div>
+            ${mRow('HTTP TOTAL', s.total.toLocaleString(), true)}
+            ${mRow('WEBSOCKET TOTAL', (s.websocket_total || 0).toLocaleString(), false)}
+            ${mRow('2xx SUCCESS', st2xx.toLocaleString(), false)}
+            ${mRow('3xx REDIRECT', st3xx.toLocaleString(), false)}
+            ${mRow('4xx ERROR', err4xx.toLocaleString(), false, err4xx > 0 ? 'text-warn' : '')}
+            ${mRow('5xx ERROR', err5xx.toLocaleString(), false, err5xx > 0 ? 'text-err' : '')}
+            ${mRow('AVERAGE RESPONSE TIME', parseDurationMs(p.average_latency).toFixed(FRACTION_DIGITS) + 'ms', false)}
+            <div class="muted-note">Kept across restarts.</div>
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Client Responses</div>
+            ${generateStatusRows(s.client_statuses)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Upstream Responses</div>
+            ${mRow('PROXIED', (s.upstream || 0).toLocaleString(), true)}
+            ${generateStatusRows(s.upstream_statuses)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Traffic</div>
+            ${mRow('INGRESS TOTAL', formatBytes(t.ingress.total_bytes, uRoute), true)}
+            ${mRow('INGRESS HEADERS', formatBytes(t.ingress.header_bytes, uRoute), false)}
+            ${mRow('INGRESS BODY', formatBytes(t.ingress.body_bytes, uRoute), false)}
+            <div class="spacer-sm"></div>
+            ${mRow('EGRESS TOTAL', formatBytes(t.egress.total_bytes, uRoute), true)}
+            ${mRow('EGRESS HEADERS', formatBytes(t.egress.header_bytes, uRoute), false)}
+            ${mRow('EGRESS BODY', formatBytes(t.egress.body_bytes, uRoute), false)}
+            <div class="spacer-sm"></div>
+            ${mRow('JOURNAL WRITTEN', formatBytes(t.journal_storage_bytes, uRoute), true)}
+        </div>`;
+
+        const filters = flattenFilters(config);
+        const stat = `
+        <div class="group-heading">CONFIGURATION · ROUTES.YAML ${esc(data.route_version || '')}</div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Matching</div>
+            <div class="sub" style="margin-bottom: 8px;">Tried <strong>#${config.order}</strong> of ${routeCount}; the first route that matches takes the request.</div>
+            ${buildMatchTree(config.match, true)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Upstream</div>
+            ${buildUpstreamHtml(config)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Execution Order</div>
+            ${buildPipelinePhasesHtml(config, filters)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Filters</div>
+            ${buildFilterConfigHtml(filters)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Journaling</div>
+            ${buildJournalHtml(config)}
+        </div>`;
+
+        return {
+            live,
+            static: stat,
+            staticKey: 'route|' + routeId + '|' + configRevision(data),
+            afterRender: () => {
+                refreshHealthTags(routeId);
+                refreshRuleErrors(window.currentConfigs[routeId]?.journal);
+                const canvas = document.getElementById('detail-canvas');
+                if (canvas && spark) {
+                    drawStackedSparkline(canvas, spark, {showYAxis: true, smooth: true, latency: lat?.p99_series_micros});
+                }
+            }
+        };
+    }
+
+    const view = document.getElementById('view');
+    const vitals = document.getElementById('sys-vitals');
+    const timeEl = document.getElementById('last-update');
+
+    const PER_SEC = '/s';
+    const ZERO_METRICS = {
+        request_statistics: {
+            total: 0, websocket_total: 0, active: 0, websocket_active: 0,
+            last_active: "1970-01-01T00:00:00Z", client_statuses: {}, upstream_statuses: {}, upstream: 0
+        },
+        traffic_flow: {
+            ingress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
+            egress: {total_bytes: 0, header_bytes: 0, body_bytes: 0},
+            journal_storage_bytes: 0
+        },
+        performance_telemetry: {average_latency: "PT0S"}
+    };
+
+    // Without SimpleMetrics in its chain (root, group or route) a route's figures stand still:
+    // zeros, or whatever was counted before it was removed. Either would read as "no traffic".
+    const NOT_MEASURED = 'Not measured: add the SimpleMetrics filter to this route, its group or the root filters.';
+
+    function isMeasured(config) {
+        for (let node = config.filter_nodes; node; node = node.child) {
+            if (node.name === 'SimpleMetrics') return true;
+        }
+        return false;
+    }
+
+    // ==========================================================================
+    // System (socket-level) view
+    // ==========================================================================
+    function systemView() {
+        const data = window.currentData;
+
+        const stats = data.connector_statistics || {
+            request_count: 0, bytes_sent: 0, bytes_received: 0, error_count: 0,
+            processing_time_nanos: 0, max_processing_time_nanos: 0,
+            active_connections: 0, max_active_connections: 0,
+            active_requests: 0, max_active_requests: 0
+        };
+
+        const avgProcessingNanos = stats.request_count > 0 ? (stats.processing_time_nanos / stats.request_count) : 0;
+        const uTotal = getUnitIndex(Math.max(stats.bytes_received, stats.bytes_sent));
+        const unrouted = data.unrouted_requests || 0;
+
+        const live = `
+        ${panelHeader('SYSTEM', 'RAW TRAFFIC')}
+
+        <div class="panel-section">
+            <div class="panel-section-title">Raw Socket Traffic</div>
+            ${mRow('REQUESTS PROCESSED', stats.request_count.toLocaleString(), true)}
+            ${mRow('NO ROUTE MATCHED (404)', unrouted.toLocaleString(), false, unrouted > 0 ? 'text-warn' : '')}
+            ${mRow('PARSER ERRORS (Dropped)', stats.error_count.toLocaleString(), false, stats.error_count > 0 ? 'text-warn' : '')}
+            ${mRow('BYTES RECEIVED', formatBytes(stats.bytes_received, uTotal), false)}
+            ${mRow('BYTES SENT', formatBytes(stats.bytes_sent, uTotal), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Concurrency</div>
+            ${mRow('ACTIVE CONNECTIONS', stats.active_connections.toLocaleString(), true, stats.active_connections > 0 ? 'text-http' : '')}
+            ${mRow('PEAK CONNECTIONS', stats.max_active_connections.toLocaleString(), false)}
+            ${mRow('ACTIVE REQUESTS', stats.active_requests.toLocaleString(), false)}
+            ${mRow('PEAK REQUESTS', stats.max_active_requests.toLocaleString(), false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Global Latency (Socket Level)</div>
+            ${mRow('AVERAGE PROCESSING', (avgProcessingNanos / 1000000).toFixed(FRACTION_DIGITS) + 'ms', true)}
+            ${mRow('MAXIMUM PROCESSING', (stats.max_processing_time_nanos / 1000000).toFixed(FRACTION_DIGITS) + 'ms', false)}
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-section-title">Diagnostic Info</div>
+            <div class="sub text-dim">
+                These metrics represent the raw physical truth at the TCP/NIO layer, before any routing, filtering, or application logic occurs.
+                They count from gateway start; route figures are kept across restarts.
+                Requests no route matched are answered 404 and are not part of any route's figures; a steady stream of them
+                usually means clients on a path that no longer exists, or scanners.
+            </div>
+        </div>`;
+
+        // Requests refused before routing are journaled only under an unrouted section, which
+        // does not inherit the root journal.
+        const stat = `
+        <div class="panel-section">
+            <div class="panel-section-title">Unrouted Journaling</div>
+            ${data.unrouted_journal
+            ? `<div class="sub text-dim" style="margin-bottom: 8px;">Requests refused before routing (no route, TRACE, an ambiguous path, a bad Transfer-Encoding, the regex budget). Not inherited from the root journal.</div>
+               ${buildJournalHtml({journal: data.unrouted_journal})}`
+            : '<div class="sub text-dim">No unrouted section: requests refused before routing are not journaled.</div>'}
+        </div>`;
+
+        return {
+            live,
+            static: stat,
+            staticKey: 'system|' + configRevision(data),
+            afterRender: () => refreshRuleErrors(data.unrouted_journal)
+        };
+    }
+
+    // ==========================================================================
+    // Overview table
+    // ==========================================================================
+    function renderTable(data) {
+        if (!data.route_configs) return;
+
+        const totals = (data.route_metrics || []).reduce((acc, r) => ({
+            total: acc.total + (r.request_statistics.total || 0),
+            st_2xx: acc.st_2xx + sumStatuses(r.request_statistics.client_statuses, 200, 299),
+            err_4xx: acc.err_4xx + sumStatuses(r.request_statistics.client_statuses, 400, 499),
+            err_5xx: acc.err_5xx + sumStatuses(r.request_statistics.client_statuses, 500, 599),
+            active: acc.active + (r.request_statistics.active || 0),
+            last_active: Math.max(acc.last_active, parseTimestamp(r.request_statistics.last_active)),
+            in_h: acc.in_h + r.traffic_flow.ingress.header_bytes,
+            in_b: acc.in_b + r.traffic_flow.ingress.body_bytes,
+            in_t: acc.in_t + r.traffic_flow.ingress.total_bytes,
+            out_h: acc.out_h + r.traffic_flow.egress.header_bytes,
+            out_b: acc.out_b + r.traffic_flow.egress.body_bytes,
+            out_t: acc.out_t + r.traffic_flow.egress.total_bytes,
+            journal: acc.journal + r.traffic_flow.journal_storage_bytes
+        }), {
+            total: 0, st_2xx: 0, err_4xx: 0, err_5xx: 0, active: 0, last_active: 0,
+            in_h: 0, in_b: 0, in_t: 0, out_h: 0, out_b: 0, out_t: 0, journal: 0
+        });
+
+        const uTotal = getUnitIndex(Math.max(totals.in_t, totals.out_t, totals.journal));
+
+        const t2xxStyle = 'text-2xx';
+        const t4xxStyle = totals.err_4xx > 0 ? 'text-4xx' : '';
+        const t5xxStyle = totals.err_5xx > 0 ? 'text-5xx' : '';
+
+        let sys2xxRps = 0, sys4xxRps = 0, sys5xxRps = 0;
+        data.route_configs.forEach(c => {
+            const r = window.currentMetrics[c.id];
+            if (r && r.sparkline_data) {
+                sys2xxRps += r.sparkline_data.success_rate;
+                sys4xxRps += r.sparkline_data.client_error_rate;
+                sys5xxRps += r.sparkline_data.server_error_rate;
+            }
+        });
+        const sysRpsTotal = sys2xxRps + sys4xxRps + sys5xxRps;
+
+        // The combined sparkline sums every route's buffer; routes share one interval only when
+        // they share the global SimpleMetrics, which is the common setup.
+        const firstRouteWithSparkline = (data.route_metrics || []).find(m => m.sparkline_data);
+        const bufferSize = firstRouteWithSparkline ? firstRouteWithSparkline.sparkline_data.success.length : 0;
+        const sysSparkline = {metadata: null, success: [], client_error: [], server_error: []};
+        if (bufferSize > 0) {
+            sysSparkline.metadata = firstRouteWithSparkline.sparkline_data.metadata;
+            for (let i = 0; i < bufferSize; i++) {
+                sysSparkline.success[i] = 0;
+                sysSparkline.client_error[i] = 0;
+                sysSparkline.server_error[i] = 0;
+            }
+            (data.route_metrics || []).forEach(m => {
+                if (m.sparkline_data && m.sparkline_data.success.length === bufferSize) {
+                    for (let i = 0; i < bufferSize; i++) {
+                        sysSparkline.success[i] += (m.sparkline_data.success[i] || 0);
+                        sysSparkline.client_error[i] += (m.sparkline_data.client_error[i] || 0);
+                        sysSparkline.server_error[i] += (m.sparkline_data.server_error[i] || 0);
+                    }
+                }
+            });
+        }
+        const sysWin = windowStats(sysSparkline);
+        const unrouted = data.unrouted_requests || 0;
+        const anyMeasured = data.route_configs.some(isMeasured);
+
+        let html = '';
+
+        html += `
+        <tr class="total-row clickable-row" data-action="system">
+            <td class="col-route">
+                ${mRow('SYSTEM TOTALS', '', true)}
+                ${mRow('LAST ACTIVE', timeAgo(totals.last_active), false)}
+                ${mRow('ACTIVE REQUESTS', totals.active, false, totals.active > 0 ? 'text-http' : '')}
+                ${mRow(`5xx (${windowLabel(sysSparkline)})`, formatPct(sysWin.pct5, sysWin.total), false, errorPctClass(sysWin.pct5))}
+                ${mRow('NO ROUTE (404)', formatCompact(unrouted), false, unrouted > 0 ? 'text-warn' : '')}
+            </td>
+            <td class="col-active">
+                <canvas id="canvas___SYSTEM__" width="200" height="60" style="margin-top: 8px;"></canvas>
+            </td>
+            ${anyMeasured ? `<td class="col-totals">
+                ${mRow('SUM', formatCompact(totals.total), true, '', formatCompact(Math.round(sysRpsTotal)) + PER_SEC)}
+                ${mRow('2xx', formatCompact(totals.st_2xx), false, t2xxStyle, formatCompact(Math.round(sys2xxRps)) + PER_SEC)}
+                ${mRow('4xx', formatCompact(totals.err_4xx), false, t4xxStyle, formatCompact(Math.round(sys4xxRps)) + PER_SEC)}
+                ${mRow('5xx', formatCompact(totals.err_5xx), false, t5xxStyle, formatCompact(Math.round(sys5xxRps)) + PER_SEC)}
+            </td>
+            <td class="col-ingress">
+                ${mRow('SUM', formatBytes(totals.in_t, uTotal), true, '', formatBytes(totals.out_t, uTotal))}
+                ${mRow('HDR', formatBytes(totals.in_h, uTotal), false, '', formatBytes(totals.out_h, uTotal))}
+                ${mRow('BDY', formatBytes(totals.in_b, uTotal), false, '', formatBytes(totals.out_b, uTotal))}
+            </td>` : `<td class="col-totals" colspan="2"><div class="sub text-dim" style="padding: 4px;">No route has the SimpleMetrics filter, so there are no route figures to add up. Open this row for the raw socket traffic.</div></td>`}
+            <td class="col-journal">
+                ${mRow('SIZE', anyMeasured ? formatBytes(totals.journal, uTotal) : '--', true)}
+            </td>
+        </tr>`;
+
+        data.route_configs.forEach((config, index) => {
+            const measured = isMeasured(config);
+            const r = window.currentMetrics[config.id] || ZERO_METRICS;
+
+            const t = r.traffic_flow;
+            const s = r.request_statistics;
+            const lat = r.latency;
+            const win = windowStats(r.sparkline_data);
+
+            const st2xx = sumStatuses(s.client_statuses, 200, 299);
+            const err4xx = sumStatuses(s.client_statuses, 400, 499);
+            const err5xx = sumStatuses(s.client_statuses, 500, 599);
+
+            const uRoute = getUnitIndex(Math.max(t.ingress.total_bytes, t.egress.total_bytes, t.journal_storage_bytes));
+
+            const r2xxRps = r.sparkline_data ? r.sparkline_data.success_rate : 0;
+            const r4xxRps = r.sparkline_data ? r.sparkline_data.client_error_rate : 0;
+            const r5xxRps = r.sparkline_data ? r.sparkline_data.server_error_rate : 0;
+            const rRpsTotal = r2xxRps + r4xxRps + r5xxRps;
+
+            // Any target a health check has taken out of rotation is worth seeing without clicking in
+            const health = data.upstream_health?.[config.id] || {};
+            const down = Object.values(health).filter(up => !up).length;
+            const healthRow = config.upstream
+                ? mRow('UPSTREAM', down > 0
+                    ? `<span class="text-err">${down}/${config.upstream.targets.length} DOWN</span>`
+                    : `${config.upstream.targets.length} TARGET${config.upstream.targets.length === 1 ? '' : 'S'}`, false)
+                : mRow('UPSTREAM', '<span class="text-dim">NONE</span>', false);
+
+            // A component reporting trouble (an open circuit breaker, all targets down) shows here
+            const worst = worstStatus(config);
+            const statusRow = !worst ? '' : mRow('STATUS', worst.health === 'OK'
+                ? 'OK'
+                : `<span class="${worst.health === 'ERROR' ? 'text-err' : 'text-warn'}">${worst.count} ${worst.health}</span>`, false);
+
+            html += `
+        <tr class="clickable-row" data-route-id="${esc(config.id)}">
+            <td class="col-route">
+                ${mRow(`<span class="route-order">#${config.order}</span>`, `<span title="${esc(config.id)}">${esc(config.id)}</span>`, true)}
+                ${mRow('LAST ACTIVE', timeAgo(s.last_active), false)}
+                ${mRow('ACTIVE REQUESTS', s.active, false, s.active > 0 ? 'text-http' : '')}
+                ${mRow('P50 / P99', lat?.window_samples ? `${formatMicros(lat.p50_micros)} / <span class="${latencyClass(lat.p99_micros)}">${formatMicros(lat.p99_micros)}</span>` : '--', false)}
+                ${mRow(`5xx (${windowLabel(r.sparkline_data)})`, formatPct(win.pct5, win.total), false, errorPctClass(win.pct5))}
+                ${healthRow}
+                ${statusRow}
+            </td>
+            <td class="col-active">
+               <canvas id="canvas_${index}" width="200" height="60" style="margin-top: 8px;"></canvas>
+            </td>
+            ${measured ? `<td class="col-totals">
+                ${mRow('SUM', formatCompact(s.total), true, '', formatCompact(Math.round(rRpsTotal)) + PER_SEC)}
+                ${mRow('2xx', formatCompact(st2xx), false, t2xxStyle, formatCompact(Math.round(r2xxRps)) + PER_SEC)}
+                ${mRow('4xx', formatCompact(err4xx), false, err4xx > 0 ? 'text-4xx' : '', formatCompact(Math.round(r4xxRps)) + PER_SEC)}
+                ${mRow('5xx', formatCompact(err5xx), false, err5xx > 0 ? 'text-5xx' : '', formatCompact(Math.round(r5xxRps)) + PER_SEC)}
+            </td>
+            <td class="col-ingress">
+                ${mRow('SUM', formatBytes(t.ingress.total_bytes, uRoute), true, '', formatBytes(t.egress.total_bytes, uRoute))}
+                ${mRow('HDR', formatBytes(t.ingress.header_bytes, uRoute), false, '', formatBytes(t.egress.header_bytes, uRoute))}
+                ${mRow('BDY', formatBytes(t.ingress.body_bytes, uRoute), false, '', formatBytes(t.egress.body_bytes, uRoute))}
+            </td>` : `<td class="col-totals" colspan="2"><div class="sub text-dim" style="padding: 4px;">${NOT_MEASURED}</div></td>`}
+            <td class="col-journal">
+                ${mRow('SIZE', measured ? formatBytes(t.journal_storage_bytes, uRoute) : '--', true)}
+                ${mRow('REQUEST', jBadge(config.journal?.request_level), false)}
+                ${mRow('RESPONSE', jBadge(config.journal?.response_level), false)}
+            </td>
+        </tr>`;
+        });
+
+        view.innerHTML = html;
+
+        const sysCanvas = document.getElementById('canvas___SYSTEM__');
+        if (sysCanvas && sysSparkline.metadata) drawStackedSparkline(sysCanvas, sysSparkline, {showYAxis: false, smooth: true});
+
+        data.route_configs.forEach((config, index) => {
+            const canvas = document.getElementById(`canvas_${index}`);
+            const metrics = window.currentMetrics[config.id];
+            if (canvas && metrics && metrics.sparkline_data) {
+                drawStackedSparkline(canvas, metrics.sparkline_data, {showYAxis: false, smooth: true});
+            }
+        });
+    }
+
+    async function update() {
+        try {
+            const res = await fetch(window.location.pathname, {headers: {'Accept': 'application/json'}});
+            const data = await res.json();
+
+            window.currentData = data;
+
+            const sys = data.system;
+            const mem = sys.memory || null;
+            const now = performance.now();
+
+            if (mem && mem.gc_time_ms !== undefined) {
+                if (previousGcTime !== null)
+                {
+                    const gcDelta = mem.gc_time_ms - previousGcTime;
+                    if (gcDelta > 0) {
+                        lastGcDelta = gcDelta;
+                        lastGcChangeAt = now;
+                    }
+                }
+                previousGcTime = mem.gc_time_ms;
+            }
+
+            const disk = data.journaling?.available_space ? formatBytes(data.journaling.available_space) : '--';
+            const activeConns = data.connector_statistics?.active_connections || 0;
+            const routesVer = data.route_version || 'Unversioned';
+            const loadedAgo = data.route_source?.loaded_at ? ` (LOADED ${timeAgo(data.route_source.loaded_at)})` : '';
+
+            vitals.innerText = `UPTIME: ${formatUptime(sys.uptime)} | ROUTES: ${routesVer}${loadedAgo} | DISK: ${disk} FREE | CONNECTIONS: ${activeConns}`;
+
+            document.getElementById('sys-version').innerText = sys.version || 'Unknown';
+            document.getElementById('routes-version').innerText = routesVer;
+
+            timeEl.innerHTML = `<span class="status-indicator" style="color: #00aa00;">●</span>ONLINE`;
+
+            window.currentConfigs = {};
+            (data.route_configs || []).forEach(c => window.currentConfigs[c.id] = c);
+
+            window.currentMetrics = {};
+            (data.route_metrics || []).forEach(m => window.currentMetrics[m.id] = m);
+
+            // Bulletproof scroll retention for the entire redraw tick
+            const currentGlobalScroll = window.scrollY;
+
+            renderGatewayHealth(data);
+            renderReloadBanner(data);
+            renderTable(data);
+            if (currentView) renderDetails();
+
+            window.scrollTo(0, currentGlobalScroll);
+
+        } catch (e) {
+            console.error(e)
+            timeEl.innerHTML = `<span class="status-indicator" style="color: #ff4444;">●</span>OFFLINE`;
+            setHealthBadge('UNKNOWN', 'The gateway did not answer');
+            // The last problems seen would read as the reason for this, which they need not be
+            document.getElementById('health-problems').classList.remove('visible');
+        }
+    }
+
+    currentView = viewFromHash();
+    if (currentView) slider.classList.add('show-details-view');
+    // The management port renders its data every 2s; polling faster only fetches the same bytes
+    setInterval(update, 2000);
+    update();
+</script>
+</body>
+</html>

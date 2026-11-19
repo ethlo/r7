@@ -1,0 +1,155 @@
+namespace com.ethlo.r7.r7f.fbs;
+
+enum FbsJournalLevel : byte { NONE = 0, METADATA = 1, HEADERS = 2, FULL = 3 }
+
+enum IpSource : byte {
+    UNKNOWN = 0,
+    SOCKET = 1,
+    X_FORWARDED_FOR = 2,
+    X_REAL_IP = 3
+}
+
+table Header {
+  name: [ubyte];
+  value: [ubyte];
+}
+
+/// Which already-journaled header set a delta is expressed against. The base always precedes
+/// its delta in the entry stream, so a reader replaying in order has it before it is needed.
+enum DeltaBase : byte {
+  CLIENT_REQUEST = 0,
+  UPSTREAM_RESPONSE = 1
+}
+
+enum DeltaOpKind : byte {
+  /// Take `count` consecutive entries from the base, starting at `base_index`.
+  COPY = 0,
+  /// Append this name and value, which the base does not carry at this position.
+  EMIT = 1
+}
+
+/// One instruction in rebuilding a header sequence. Applied in order, so the result reproduces
+/// the original ordering and multiplicity exactly — both are part of the record being audited,
+/// and a delta that only said which headers were added could not restore either.
+table DeltaOp {
+  kind: DeltaOpKind;
+  base_index: uint32;
+  count: uint32;
+  name: [ubyte];
+  value: [ubyte];
+}
+
+/// A header set expressed as the difference from one already in the journal.
+///
+/// The gateway journals the request as it arrived and again as it was forwarded, and the
+/// response as the upstream sent it and again as it went back to the client. Those pairs differ
+/// only by what the gateway itself did — rewriting Host, appending forwarding headers, whatever
+/// the filter chain changed — so repeating the whole set twice spends most of its bytes saying
+/// nothing changed.
+///
+/// Encoding the difference is also the more useful record: what the gateway altered is stated
+/// outright rather than left for a reader to work out by diffing two full sets. An EMIT is
+/// something the gateway put there; a base entry no COPY covers is something it removed.
+table HeaderDelta {
+  base: DeltaBase;
+  ops: [DeltaOp];
+}
+
+table ClientRequest {
+  journal_level: FbsJournalLevel;
+  req_id: [ubyte];
+  start_line: [ubyte];
+  headers: [Header];
+  client_ip: [ubyte];
+  client_ip_source: IpSource;
+}
+
+table UpstreamRequest {
+  journal_level: FbsJournalLevel;
+  req_id: [ubyte];
+  start_line: [ubyte];
+  /// Exactly one of `headers` and `header_delta` is present. The full set is written when
+  /// there is no base to express a difference against — the client request was journaled at
+  /// METADATA and carries no headers, or was not journaled at all.
+  headers: [Header];
+  header_delta: HeaderDelta;
+}
+
+table UpstreamResponse {
+  journal_level: FbsJournalLevel;
+  req_id: [ubyte];
+  start_line: [ubyte];
+  headers: [Header];
+  status: uint16;
+  /// False for a head the upstream sent that r7 refused to relay (a 101 it cannot tunnel),
+  /// answering the client itself: the exchange's ResponseBody is then r7's own answer, not
+  /// this response's, whose body was never read. Absent means true, which is every upstream
+  /// response a writer without this field recorded.
+  relayed: bool = true;
+}
+
+table ClientResponse {
+  journal_level: FbsJournalLevel;
+  req_id: [ubyte];
+  start_line: [ubyte];
+  /// As on UpstreamRequest: exactly one of these is present.
+  headers: [Header];
+  header_delta: HeaderDelta;
+  status: uint16;
+}
+
+table RequestBody {
+  req_id: [ubyte];
+  length: uint32;
+}
+
+table ResponseBody {
+  req_id: [ubyte];
+  length: uint32;
+}
+
+table EndExchange {
+  req_id: [ubyte];
+  client_start: long;
+  client_end: long;
+  status: uint16;
+  // CRC32C of each journaled body, as an unsigned 32-bit value widened to int64, or -1
+  // when the writer did not compute one. The width is what makes -1 mean that: every
+  // 32-bit value is a legitimate CRC32C of some input, 0xFFFFFFFF included, so a uint32
+  // field has no room left to say "absent". FlatBuffers omits a field equal to its
+  // default, so "not recorded" — the common case, since most exchanges carry no request
+  // body — costs nothing on disk.
+  request_crc32c: long = -1;
+  response_crc32c: long = -1;
+  proxy_start: int64;
+  proxy_first_byte_received: int64;
+  proxy_end: int64;
+  request_header_bytes: long;
+  request_body_bytes: long;
+  response_header_bytes: long;
+  response_body_bytes: long;
+  attributes: [Header];
+  /// True when the journal kept only the first truncate_body_at bytes of that body: the body
+  /// was longer, and the rest streamed to the upstream or the client without being journaled.
+  /// The checksum covers the journaled prefix. Absent means false. Appended, so readers built
+  /// before these fields ignore them; a tailer cannot tell a capped body from an exchange that
+  /// ended early by comparing byte counts, so the writer states it.
+  request_body_truncated: bool;
+  response_body_truncated: bool;
+}
+
+union EventPayload {
+  ClientRequest,
+  UpstreamRequest,
+  RequestBody,
+  ResponseBody,
+  UpstreamResponse,
+  ClientResponse,
+  EndExchange
+}
+
+table JournalEvent {
+  event: EventPayload;
+}
+
+root_type JournalEvent;

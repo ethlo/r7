@@ -1,0 +1,101 @@
+name: Security scans
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    # Weekly, so advisories published after the last change are still caught
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+# Nothing by default: each job grants only the permissions it needs.
+permissions: {}
+
+jobs:
+  codeql:
+    name: CodeQL (java, security-extended)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '27'
+          cache: maven
+
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+
+      - name: Build
+        run: ./mvnw -B -ntp -DskipTests package
+
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:java-kotlin
+
+  secrets:
+    name: Secrets in git history (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Full history: a secret committed and then deleted is still published.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Pinned by digest, like the OSV scanner below; gitleaks/gitleaks-action instead downloads
+      # a release binary by version at run time. Digest of ghcr.io/gitleaks/gitleaks:v8.30.1.
+      # Run as the runner's user so git accepts the checkout's ownership.
+      - name: Scan with gitleaks
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo:ro" -w /repo \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git --redact --no-banner --exit-code 1 .
+
+  dependencies:
+    name: Dependency vulnerabilities (OSV)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '27'
+          cache: maven
+
+      # Maven resolves the full graph, transitive dependencies included. Scanning the pom files
+      # directly cannot: OSV-Scanner fails to resolve the reactor's own SNAPSHOT modules and falls
+      # back to direct dependencies only, which missed logback-core (transitive) entirely.
+      - name: Build a CycloneDX SBOM of the runtime dependencies
+        run: |
+          ./mvnw -B -ntp -DskipTests install
+          ./mvnw -B -ntp org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom -DoutputFormat=json -DincludeTestScope=false
+
+      # Fails on any advisory not accepted, with its reason and an expiry, in osv-scanner.toml.
+      # The scanner image is pinned by digest rather than through google/osv-scanner-action:
+      # that action's metadata runs a mutable image tag, so pinning the action's SHA would not
+      # pin the code this job executes. Digest of ghcr.io/google/osv-scanner:v2.6.0.
+      - name: Scan the SBOM with OSV-Scanner
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src \
+            ghcr.io/google/osv-scanner@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa \
+            scan --config=osv-scanner.toml -L=target/bom.json

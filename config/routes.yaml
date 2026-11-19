@@ -1,0 +1,67 @@
+version: my-version-42
+
+# Global filters applied to every request
+filters:
+  - SimpleMetrics:
+      period: 5m
+      interval: 2s
+  - RequestSizeLimit:
+      max_size: 10MB
+  - Cors:
+      allowed_headers:
+        - Accept
+      allowed_origins:
+        - https://app.ethlo.com
+      allowed_methods:
+        - GET
+        - POST
+
+routes:
+  - id: core-api
+    match:
+      - PathPrefix:
+          prefix: /api/v1
+      - Method:
+          include:
+            - GET
+            - POST
+    upstream:
+      targets:
+        - url: http://api-node-01:8090
+        - url: http://api-node-02:8090
+      health_check:
+        path: /health
+        interval: 5s
+      timeouts:
+        read: 15s
+      fallback:
+        route_id: maintenance-mode
+    journal:
+      request:
+        level: HEADERS
+      response:
+        level: HEADERS
+    filters:
+      - StripPathPrefix:
+          parts: 2
+      - AddRequestHeader:
+          name: X-Gateway-Routed
+          value: "true"
+
+  - id: maintenance-mode
+    match: []
+    filters:
+      - ReturnResponse:
+          status: 503
+          content_type: application/json
+          body: '{"error": "Service temporarily degraded. We are on it!"}'
+
+  - id: static-frontend
+    match:
+      - PathPrefix:
+          prefix: /app
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          directories: [/tmp]

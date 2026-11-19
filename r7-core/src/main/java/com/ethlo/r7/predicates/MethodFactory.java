@@ -1,0 +1,90 @@
+package com.ethlo.r7.predicates;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+
+import com.ethlo.r7.api.GatewayPredicate;
+import com.ethlo.r7.api.GatewayRequest;
+import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.spi.GatewayPredicateFactory;
+import com.ethlo.r7.util.ValidatorUtils;
+import com.ethlo.r7.validation.ValidatableConfig;
+import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
+
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayPredicateFactory.class)
+@Description("Matches if the HTTP method is one of the allowed methods.")
+public class MethodFactory implements GatewayPredicateFactory<MethodFactory.Config>
+{
+    private static final String PREDICATE_NAME = "Method";
+
+    @Override
+    public String name()
+    {
+        return PREDICATE_NAME;
+    }
+
+    @Override
+    public Class<Config> configClass()
+    {
+        return Config.class;
+    }
+
+    @Override
+    public GatewayPredicate create(Config config)
+    {
+        return new GP(config);
+    }
+
+    public record Config(
+            @Description("List of allowed HTTP methods (e.g., GET, POST).")
+            List<String> include) implements ValidatableConfig
+    {
+        @Override
+        public void validate(ValidationResult result)
+        {
+            new ValidatorUtils(result)
+                    .required("include", include)
+                    .notEmpty("include", include);
+        }
+    }
+    private static class GP implements GatewayPredicate, ShortInfo
+    {
+        private final String[] include;
+
+        public GP(Config config)
+        {
+            // Array iteration is mechanically faster than Collection iteration
+            this.include = config.include().toArray(new String[0]);
+        }
+
+        @Override
+        public boolean test(GatewayRequest request)
+        {
+            final String requestMethod = request.method();
+            for (final String m : include)
+            {
+                if (Objects.equals(m, requestMethod))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public String name()
+        {
+            return PREDICATE_NAME;
+        }
+
+        @Override
+        public String summary()
+        {
+            return PREDICATE_NAME + ": " + Arrays.toString(include);
+        }
+    }
+}

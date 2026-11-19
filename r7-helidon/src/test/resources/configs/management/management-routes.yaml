@@ -1,0 +1,54 @@
+version: management-test
+
+routes:
+  - id: with-secrets
+    match:
+      - PathPrefix:
+          prefix: /secrets
+      - RequestHeader:
+          name: X-Route-Token
+          value: predicate-s3cret-value
+    filters:
+      - InjectBasicAuth:
+          username: upstream-svc
+          password: upstream-s3cret-value
+      - SetRequestHeader:
+          name: Authorization
+          value: Bearer header-s3cret-token
+      - SetRequestHeader:
+          name: Accept
+          value: application/visible+json
+      - SetRequestCookie:
+          name: session
+          value: cookie-s3cret-value
+      - AddQueryParameter:
+          name: api_key
+          value: query-s3cret-value
+      - SetResponseHeader:
+          name: X-Api-Key
+          value: response-header-s3cret
+      - RequireMatchRequestHeader:
+          name: X-Client-Token
+          regexp: ^require-s3cret-pattern$
+      - SetResponseCookie:
+          name: tracking
+          value: response-cookie-s3cret
+    upstream:
+      health_check:
+        path: /health
+        interval: 1h
+      targets:
+        - url: http://svc-user:url-s3cret-pass@${UPSTREAM_HOST}:${WIREMOCK_PORT}
+
+  # Its only target is held out of rotation, so the gateway's health is ERROR from the moment
+  # routes load: /ready must answer 503 while /health, the liveness probe, stays 200
+  - id: forced-down
+    match:
+      - PathPrefix:
+          prefix: /forced-down
+    upstream:
+      health_check:
+        interval: 1h
+        override: FORCE_DOWN
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

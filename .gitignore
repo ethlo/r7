@@ -1,0 +1,24 @@
+r7-core/src/test/resources/.cifuzz-corpus
+site
+docker/journals
+/journals
+/r7-helidon/journals
+/benchmark/results
+gc.log*
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+.kotlin
+.idea
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+/docs/editor/node_modules/
+/benchmark/.cache
+
+# Holds R7_FINGERPRINT_KEY in the quickstart and docker/ examples
+.env

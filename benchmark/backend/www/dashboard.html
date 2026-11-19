@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="/static/app.3f9c2e1b.css">
+  <link rel="preload" href="/static/app.8d41a7c0.js" as="script">
+  <link rel="icon" href="/static/favicon.ico">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Example</a>
+    <nav>
+      <a href="/dashboard" aria-current="page">Dashboard</a>
+      <a href="/orders">Orders</a>
+      <a href="/customers">Customers</a>
+      <a href="/reports">Reports</a>
+      <a href="/settings">Settings</a>
+    </nav>
+    <form class="search" action="/search" method="get">
+      <input type="search" name="q" placeholder="Search orders" aria-label="Search orders">
+    </form>
+  </header>
+  <main>
+    <section class="cards">
+      <div class="card"><h2>Orders today</h2><p class="value">412</p></div>
+      <div class="card"><h2>Revenue</h2><p class="value">183,240 NOK</p></div>
+      <div class="card"><h2>Pending</h2><p class="value">27</p></div>
+      <div class="card"><h2>Returns</h2><p class="value">3</p></div>
+    </section>
+    <section>
+      <h1>Recent orders</h1>
+      <table class="orders">
+        <thead>
+        <tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+        <tr>
+          <td><a href="/orders/1201">#1201</a></td>
+          <td>Customer 1</td>
+          <td class="num">831 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:01:00Z">08:01</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1202">#1202</a></td>
+          <td>Customer 2</td>
+          <td class="num">1562 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:02:00Z">08:02</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1203">#1203</a></td>
+          <td>Customer 3</td>
+          <td class="num">2293 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:03:00Z">08:03</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1204">#1204</a></td>
+          <td>Customer 4</td>
+          <td class="num">3024 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:04:00Z">08:04</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1205">#1205</a></td>
+          <td>Customer 5</td>
+          <td class="num">3755 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:05:00Z">08:05</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1206">#1206</a></td>
+          <td>Customer 6</td>
+          <td class="num">4486 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:06:00Z">08:06</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1207">#1207</a></td>
+          <td>Customer 7</td>
+          <td class="num">5217 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:07:00Z">08:07</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1208">#1208</a></td>
+          <td>Customer 8</td>
+          <td class="num">5948 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:08:00Z">08:08</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1209">#1209</a></td>
+          <td>Customer 9</td>
+          <td class="num">6679 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:09:00Z">08:09</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1210">#1210</a></td>
+          <td>Customer 10</td>
+          <td class="num">7410 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:10:00Z">08:10</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1211">#1211</a></td>
+          <td>Customer 11</td>
+          <td class="num">8141 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:11:00Z">08:11</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1212">#1212</a></td>
+          <td>Customer 12</td>
+          <td class="num">8872 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:12:00Z">08:12</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1213">#1213</a></td>
+          <td>Customer 13</td>
+          <td class="num">603 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:13:00Z">08:13</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1214">#1214</a></td>
+          <td>Customer 14</td>
+          <td class="num">1334 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:14:00Z">08:14</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1215">#1215</a></td>
+          <td>Customer 15</td>
+          <td class="num">2065 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:15:00Z">08:15</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1216">#1216</a></td>
+          <td>Customer 16</td>
+          <td class="num">2796 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:16:00Z">08:16</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1217">#1217</a></td>
+          <td>Customer 17</td>
+          <td class="num">3527 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:17:00Z">08:17</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1218">#1218</a></td>
+          <td>Customer 18</td>
+          <td class="num">4258 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:18:00Z">08:18</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1219">#1219</a></td>
+          <td>Customer 19</td>
+          <td class="num">4989 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:19:00Z">08:19</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1220">#1220</a></td>
+          <td>Customer 20</td>
+          <td class="num">5720 NOK</td>
+          <td><span class="badge badge-shipped">Shipped</span></td>
+          <td><time datetime="2026-10-11T08:20:00Z">08:20</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1221">#1221</a></td>
+          <td>Customer 21</td>
+          <td class="num">6451 NOK</td>
+          <td><span class="badge badge-ok">Confirmed</span></td>
+          <td><time datetime="2026-10-11T08:21:00Z">08:21</time></td>
+        </tr>
+        <tr>
+          <td><a href="/orders/1222">#1222</a></td>
+          <td>Customer 22</td>
+          <td class="num">7182 NOK</td>
+          <td><span class="badge badge-pending">Pending</span></td>
+          <td><time datetime="2026-10-11T08:22:00Z">08:22</time></td>
+        </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer>
+    <p>&copy; 2026 Example AS</p>
+  </footer>
+  <script src="/static/app.8d41a7c0.js" defer></script>
+</body>
+</html>

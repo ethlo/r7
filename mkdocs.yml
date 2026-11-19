@@ -1,0 +1,73 @@
+site_name: r7 Gateway
+site_description: The gateway that remembers every request
+site_url: https://r7.ethlo.com
+repo_url: https://github.com/ethlo/r7
+repo_name: ethlo/r7
+
+theme:
+  custom_dir: docs/overrides
+  name: material
+  variant: classic
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: lucide/sun-moon
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: lucide/moon
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - content.code.copy
+    - toc.integrate
+    - announce.dismiss
+  logo: assets/r7.svg
+  favicon: assets/r7.svg
+  font:
+    text: Inter Tight
+    code: JetBrains Mono
+
+copyright: 'An <a href="https://ethlo.com">ethlo</a> project'
+
+extra_css:
+  - stylesheets/custom.css
+
+nav:
+  - Overview: index.md
+  - Get started:
+      - Quickstart: quickstart.md
+      - Config editor: editor.md
+  - Reference:
+      - Configuration: config.md
+      - Journaling: journaling.md
+      - WARC profile: warc.md
+      - Extensibility: extensibility.md
+  - Operate:
+      - Where r7 fits: where-r7-fits.md
+      - Performance tuning: performance_tuning.md
+      - Benchmarks: benchmarks.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: true
+      pygments_lang_class: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

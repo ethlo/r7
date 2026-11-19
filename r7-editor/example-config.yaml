@@ -1,0 +1,115 @@
+version: my-version-42
+
+# Root filters: one instance each for the whole gateway
+filters:
+  - SimpleMetrics:
+      period: 5m
+      interval: 2s
+  - RequestSizeLimit:
+      max_size: 10MB
+  - Cors:
+      allowed_headers:
+        - Accept
+      allowed_origins:
+        - https://app.ethlo.com
+      allowed_methods:
+        - GET
+        - POST
+
+# Root journal: the base for every route, and rules checked after the route's and group's own
+journal:
+  request:
+    level: METADATA
+  response:
+    level: METADATA
+  on_response:
+    - id: server-errors
+      match:
+        - Status:
+            include: [5xx]
+      response: { level: FULL, truncate_body_at: 64KB }
+
+# Root upstream keys, inherited key by key
+upstream:
+  timeouts:
+    connect: 2s
+    read: 30s
+
+# Requests refused before routing: route misses, ambiguous paths, TRACE
+unrouted:
+  journal:
+    request:
+      level: HEADERS
+    response:
+      level: METADATA
+
+routes:
+  - group: api
+    match:
+      - PathPrefix:
+          prefix: /api/v1/
+    filters:
+      # One limit for the group's routes together
+      - RateLimiter:
+          capacity: 100
+          refill_tokens: 10
+          refill_period: 1s
+      - StripPathPrefix:
+          parts: 2
+    upstream:
+      targets:
+        - url: http://api-node-01:8090
+        - url: http://api-node-02:8090
+      health_check:
+        path: /health
+        interval: 5s
+      fallback:
+        route_id: maintenance-mode
+    journal:
+      on_request:
+        - id: api-writes
+          match:
+            - not:
+                Method:
+                  include: [GET, HEAD]
+          request: { level: FULL, truncate_body_at: 64KB }
+    routes:
+      - id: orders
+        match:
+          - PathPrefix:
+              prefix: /api/v1/orders/
+        filters:
+          - AddRequestHeader:
+              name: X-Gateway-Routed
+              value: "true"
+      - id: reports
+        match:
+          - PathPrefix:
+              prefix: /api/v1/reports/
+        upstream:
+          timeouts:
+            connect: 2s
+            read: 120s
+
+  - id: maintenance-mode
+    match: []
+    filters:
+      - ReturnResponse:
+          status: 503
+          content_type: application/json
+          body: '{"error": "Service temporarily degraded. We are on it!"}'
+
+  - id: static-frontend
+    match:
+      - PathPrefix:
+          prefix: /app/
+    filters:
+      - StripPathPrefix:
+          parts: 1
+      - StaticContent:
+          directories: [/var/www/frontend/]
+    journal:
+      request:
+        level: NONE
+      response:
+        level: NONE

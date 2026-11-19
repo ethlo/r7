@@ -1,0 +1,21 @@
+version: request-size-test
+
+routes:
+  - id: size-limited
+    match:
+      - PathPrefix:
+          prefix: /limited
+    filters:
+      - RequestSizeLimit:
+          max_size: 1KB
+    upstream:
+      targets:
+        - url: http://127.0.0.1:${RAW_UPSTREAM_PORT}
+
+  - id: unlimited
+    match:
+      - PathPrefix:
+          prefix: /unlimited
+    upstream:
+      targets:
+        - url: http://127.0.0.1:${RAW_UPSTREAM_PORT}

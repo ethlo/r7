@@ -1,0 +1,22 @@
+# Used only while Dockerfile.jvm builds the image's AOT cache (R7Helidon.train): one journaled
+# route, proxied to the gateway's own management port, so that the training requests load the
+# classes of a real request - routing, filters, upstream, journal - into the cache.
+version: aot-training
+
+routes:
+  - id: training
+    match:
+      - PathPrefix:
+          prefix: /
+    upstream:
+      targets:
+        - url: http://127.0.0.1:18888
+    journal:
+      request:
+        level: FULL
+      response:
+        level: FULL
+    filters:
+      - AddRequestHeader:
+          name: X-Gateway-Routed
+          value: "true"

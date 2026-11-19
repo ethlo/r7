@@ -1,0 +1,16 @@
+version: cors-test
+
+routes:
+  - id: cors
+    match:
+      - PathPrefix:
+          prefix: /cors
+    filters:
+      - Cors:
+          allowed_origins:
+            - https://app.example
+          allowed_methods:
+            - GET
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

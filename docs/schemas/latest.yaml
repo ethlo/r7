@@ -1,0 +1,2876 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+type: object
+title: r7 Gateway Configuration
+$defs:
+  filter:
+    anyOf:
+    - type: object
+      properties:
+        AddCorrelationId:
+          type: object
+          properties:
+            trust_incoming:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether an incoming X-Correlation-Id from the client is kept instead of being replaced. Off by default: the header is client-controlled, so trusting it lets a client plant an arbitrary value in upstream logs and tracing under this gateway's name."
+              default: false
+          additionalProperties: false
+          description: Adds a unique correlation ID header to upstream requests and client responses for request tracing.
+        AddQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The value to assign to the query parameter.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Injects a static query parameter into the upstream request URL.
+          defaultSnippets:
+          - label: Insert AddQueryParameter
+            description: Injects a static query parameter into the upstream request URL.
+            body:
+              name: $1
+              value: $2
+        AddRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            value:
+              type: string
+              description: The value of the header.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Adds a custom header to the upstream request.
+          defaultSnippets:
+          - label: Insert AddRequestHeader
+            description: Adds a custom header to the upstream request.
+            body:
+              name: $1
+              value: $2
+        AddResponseHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            value:
+              type: string
+              description: The value of the header.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Adds a custom header to the client response.
+          defaultSnippets:
+          - label: Insert AddResponseHeader
+            description: Adds a custom header to the client response.
+            body:
+              name: $1
+              value: $2
+        BasicAuth:
+          type: object
+          properties:
+            forward_credentials:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether the client's own Authorization header is passed on to the upstream after it has been verified. Off by default: the credentials are the gateway's to check, and forwarding them hands every client password to the upstream. A header set by another filter, such as InjectBasicAuth, is never removed."
+              default: false
+            realm:
+              type: string
+              description: The authentication realm presented to the client.
+            users:
+              type: array
+              items:
+                type: string
+              description: "List of users in htpasswd format (username:bcrypt-hash), as produced by 'htpasswd -B'."
+          required:
+          - users
+          additionalProperties: false
+          description: Rejects requests that do not present valid Basic Authentication credentials.
+          defaultSnippets:
+          - label: Insert BasicAuth
+            description: Rejects requests that do not present valid Basic Authentication credentials.
+            body:
+              users: $1
+        CircuitBreaker:
+          type: object
+          properties:
+            cooldown_period:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "The duration the circuit remains open before attempting to close. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+            failure_threshold:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The number of consecutive failures before the circuit opens.
+            slow_call:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "An upstream response head that arrives later than this after the request was forwarded counts as a failure, whatever its status and whether or not the client waited. Without it, slowness counts only through the read timeout. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+          required:
+          - failure_threshold
+          - cooldown_period
+          additionalProperties: false
+          description: "Stops forwarding traffic to a failing upstream until it recovers. Judges each exchange by how its upstream fared, once the exchange is over."
+          defaultSnippets:
+          - label: Insert CircuitBreaker
+            description: "Stops forwarding traffic to a failing upstream until it recovers. Judges each exchange by how its upstream fared, once the exchange is over."
+            body:
+              failure_threshold: $1
+              cooldown_period: $2
+        Cors:
+          type: object
+          properties:
+            allow_credentials:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: Whether credentials are allowed. Defaults to false.
+              default: false
+            allowed_headers:
+              type: array
+              items:
+                type: string
+              description: List of allowed headers.
+            allowed_methods:
+              type: array
+              items:
+                type: string
+              description: List of allowed methods.
+            allowed_origins:
+              type: array
+              items:
+                type: string
+              description: List of allowed origins.
+            max_age:
+              type: string
+              description: The max age for preflight caching. Defaults to 1800 seconds (30 minutes).
+              default: 30m
+          required:
+          - allowed_origins
+          - allowed_methods
+          - allowed_headers
+          additionalProperties: false
+          description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
+          defaultSnippets:
+          - label: Insert Cors
+            description: Handles Cross-Origin Resource Sharing (CORS) preflight and response headers.
+            body:
+              allowed_origins: $1
+              allowed_methods: $2
+              allowed_headers: $3
+        InjectBasicAuth:
+          type: object
+          properties:
+            password:
+              type: string
+              description: The password for Basic Auth.
+            username:
+              type: string
+              description: The username for Basic Auth.
+          required:
+          - username
+          - password
+          additionalProperties: false
+          description: Injects a Basic Authentication header into the upstream request.
+          defaultSnippets:
+          - label: Insert InjectBasicAuth
+            description: Injects a Basic Authentication header into the upstream request.
+            body:
+              username: $1
+              password: $2
+        JwtAuth:
+          type: object
+          properties:
+            audience:
+              type: string
+              description: "A value the token's 'aud' must contain. Required: an identity provider signs the tokens of all its clients with the same keys, so without it a token issued to any of them would pass."
+            clock_skew_seconds:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Clock skew allowed on 'exp' and 'nbf', in seconds. At most 300: beyond that it stops allowing for unsynchronised clocks and silently extends every token's lifetime."
+              default: 60
+            forward_claims_as_headers:
+              type: object
+              additionalProperties: true
+              description: "Claim name to upstream header name. Each listed claim that is a string is set on the upstream request under that header. Every listed header is removed from the client's own request first, in any spelling a backend could read as it (X_User_Id as well as x-user-id), so a client can never supply one itself."
+            forward_credentials:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether the client's own Authorization header is passed on to the upstream after the token has been verified. Off by default: the token is the gateway's to check, and forwarding it hands every client's credential to the upstream. A header set by another filter, such as InjectBasicAuth, is never removed."
+              default: false
+            issuer:
+              type: string
+              description: "The 'iss' a token must carry, for a single issuer. A token from any other issuer is refused. 'issuers' replaces it and 'jwks_url'."
+            issuers:
+              type: array
+              items:
+                type: object
+                properties:
+                  issuer:
+                    type: string
+                    description: "The 'iss' the issuer's tokens carry, such as 'https://auth.example.com/realms/tenant-a'. Matched exactly."
+                  jwks_url:
+                    type: string
+                    description: "The JWKS endpoint the issuer's signing keys are fetched from. Defaults to the issuer followed by '/protocol/openid-connect/certs', where Keycloak publishes a realm's keys."
+                required:
+                - issuer
+                additionalProperties: false
+              description: "The issuers whose tokens are accepted, each with its own keys, in place of 'issuer' and 'jwks_url'. A token's 'iss' must equal one of them exactly; a token from any other issuer is refused before any keys are fetched."
+            jwks_cache_duration:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "How long the fetched keys are cached. Shortly before the cache expires, the next request starts a refresh on a background thread. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+              default: 5m
+            jwks_url:
+              type: string
+              description: "The JWKS endpoint the signing keys are fetched from, such as 'https://auth.example.com/realms/tenant-a/protocol/openid-connect/certs'. Set with 'issuer', for a single issuer; 'issuers' replaces both."
+            username_claim:
+              type: string
+              description: "The claim that holds the caller's readable name, journaled beside the subject. 'sub' is often an opaque id, such as a UUID in Keycloak."
+              default: preferred_username
+          required:
+          - audience
+          additionalProperties: false
+          description: "Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint."
+          defaultSnippets:
+          - label: Insert JwtAuth
+            description: "Rejects requests that do not present a valid Bearer JWT from a trusted issuer, verified against that issuer's JWKS endpoint."
+            body:
+              audience: $1
+        RateLimiter:
+          type: object
+          properties:
+            capacity:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The maximum number of tokens the bucket can hold. This defines the absolute burst limit.
+            ipv6_prefix_length:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "How many leading bits of an IPv6 client address identify one client. A single subscriber is typically assigned a whole /64 and can use any address in it, so limiting per full address lets one client take as many buckets as it likes."
+              default: 64
+            max_bucket_ttl:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "How long a bucket remains in memory after its last access before being purged. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+              default: 10m
+            max_buckets:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The maximum number of distinct client buckets to track in memory. Limits memory consumption under heavy load.
+              default: 100000
+            refill_period:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "The time interval between token refills (e.g., 1s, 500ms). (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+            refill_tokens:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The number of tokens added to the bucket at the end of every refill period.
+          required:
+          - capacity
+          - refill_tokens
+          - refill_period
+          additionalProperties: false
+          description: Local rate-limiter useful for avoiding overload by demanding users
+          defaultSnippets:
+          - label: Insert RateLimiter
+            description: Local rate-limiter useful for avoiding overload by demanding users
+            body:
+              capacity: $1
+              refill_tokens: $2
+              refill_period: $3
+        RemoveQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter to remove.
+          required:
+          - name
+          additionalProperties: false
+          description: Removes a specific query parameter from the upstream request.
+          defaultSnippets:
+          - label: Insert RemoveQueryParameter
+            description: Removes a specific query parameter from the upstream request.
+            body:
+              name: $1
+        RemoveRequestCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie to remove.
+          required:
+          - name
+          additionalProperties: false
+          description: Removes a specific cookie from the upstream request.
+          defaultSnippets:
+          - label: Insert RemoveRequestCookie
+            description: Removes a specific cookie from the upstream request.
+            body:
+              name: $1
+        RemoveRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header to remove.
+          required:
+          - name
+          additionalProperties: false
+          description: Removes a specific header from the upstream request.
+          defaultSnippets:
+          - label: Insert RemoveRequestHeader
+            description: Removes a specific header from the upstream request.
+            body:
+              name: $1
+        RemoveResponseHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header to remove.
+          required:
+          - name
+          additionalProperties: false
+          description: Removes a specific header from the client response.
+          defaultSnippets:
+          - label: Insert RemoveResponseHeader
+            description: Removes a specific header from the client response.
+            body:
+              name: $1
+        RequestSizeLimit:
+          type: object
+          properties:
+            max_size:
+              type: string
+              pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+              description: "The maximum allowed payload size (e.g., 10MB, 1GB). (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+          required:
+          - max_size
+          additionalProperties: false
+          description: Rejects requests that exceed a specified payload size.
+          defaultSnippets:
+          - label: Insert RequestSizeLimit
+            description: Rejects requests that exceed a specified payload size.
+            body:
+              max_size: $1
+        RequireCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the required cookie.
+            reject_status_code:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return if the cookie is missing.
+              default: 400
+          required:
+          - name
+          additionalProperties: false
+          description: Ensures a required cookie is present in the request.
+          defaultSnippets:
+          - label: Insert RequireCookie
+            description: Ensures a required cookie is present in the request.
+            body:
+              name: $1
+        RequireMatchCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            regexp:
+              type: string
+              description: The regular expression pattern the cookie value must match.
+            reject_status_code:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return if the cookie is missing or invalid.
+              default: 400
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Ensures a required cookie exists and matches a specific regular expression.
+          defaultSnippets:
+          - label: Insert RequireMatchCookie
+            description: Ensures a required cookie exists and matches a specific regular expression.
+            body:
+              name: $1
+              regexp: $2
+        RequireMatchQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            regexp:
+              type: string
+              description: The regular expression pattern the query parameter value must match.
+            reject_status_code:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return if the parameter is missing or invalid.
+              default: 400
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Ensures a required query parameter exists and matches a specific regular expression.
+          defaultSnippets:
+          - label: Insert RequireMatchQueryParameter
+            description: Ensures a required query parameter exists and matches a specific regular expression.
+            body:
+              name: $1
+              regexp: $2
+        RequireMatchRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression pattern the header value must match.
+            reject_status_code:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return if the header is missing or invalid.
+              default: 400
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Ensures a required request header exists and matches a specific regular expression.
+          defaultSnippets:
+          - label: Insert RequireMatchRequestHeader
+            description: Ensures a required request header exists and matches a specific regular expression.
+            body:
+              name: $1
+              regexp: $2
+        RequireQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the required query parameter.
+            reject_status_code:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return if the parameter is missing.
+              default: 400
+          required:
+          - name
+          additionalProperties: false
+          description: Ensures a required query parameter is present in the request.
+          defaultSnippets:
+          - label: Insert RequireQueryParameter
+            description: Ensures a required query parameter is present in the request.
+            body:
+              name: $1
+        RequireRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the required header.
+            reject_status_code:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return if the header is missing.
+              default: 400
+          required:
+          - name
+          additionalProperties: false
+          description: Ensures a required header is present in the request.
+          defaultSnippets:
+          - label: Insert RequireRequestHeader
+            description: Ensures a required header is present in the request.
+            body:
+              name: $1
+        ReturnResponse:
+          type: object
+          properties:
+            body:
+              type: string
+              description: The body content of the response.
+            content_type:
+              type: string
+              description: The Content-Type of the response body.
+              default: text/plain; charset=utf-8
+            status:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to return.
+          required:
+          - status
+          - body
+          additionalProperties: false
+          description: Immediately terminates the request chain and returns a custom response.
+          defaultSnippets:
+          - label: Insert ReturnResponse
+            description: Immediately terminates the request chain and returns a custom response.
+            body:
+              status: $1
+              body: $2
+        RewritePath:
+          type: object
+          properties:
+            regexp:
+              type: string
+              description: The regular expression to match against the path.
+            replacement:
+              type: string
+              description: "The replacement: $1 for a numbered group, {name} for a named one, {query.NAME} for a query parameter of the request. A literal ? starts the query the upstream receives, whose parameters each need a name and whose captures and query values must be parameter values. \\{, \\?, \\& and \\= are literal characters."
+          required:
+          - regexp
+          - replacement
+          additionalProperties: false
+          description: Rewrites the request path using a regular expression replacement.
+          defaultSnippets:
+          - label: Insert RewritePath
+            description: Rewrites the request path using a regular expression replacement.
+            body:
+              regexp: $1
+              replacement: $2
+        SetQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The value to set.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Sets (or overwrites) a query parameter in the upstream request.
+          defaultSnippets:
+          - label: Insert SetQueryParameter
+            description: Sets (or overwrites) a query parameter in the upstream request.
+            body:
+              name: $1
+              value: $2
+        SetRequestCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            value:
+              type: string
+              description: The value of the cookie.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Sets a cookie on the upstream request.
+          defaultSnippets:
+          - label: Insert SetRequestCookie
+            description: Sets a cookie on the upstream request.
+            body:
+              name: $1
+              value: $2
+        SetRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            value:
+              type: string
+              description: The value to set.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Sets (or overwrites) a header in the upstream request.
+          defaultSnippets:
+          - label: Insert SetRequestHeader
+            description: Sets (or overwrites) a header in the upstream request.
+            body:
+              name: $1
+              value: $2
+        SetResponseCookie:
+          type: object
+          properties:
+            domain:
+              type: string
+              description: The cookie domain.
+            http_only:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: Whether client-side script is denied access to the cookie. Defaults to true.
+              default: true
+            max_age:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "The cookie max-age duration. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+            name:
+              type: string
+              description: The cookie name.
+            path:
+              type: string
+              description: The cookie path.
+            same_site:
+              type: string
+              description: "The SameSite policy (Strict, Lax, None). Defaults to Lax."
+              default: Lax
+            secure:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: Whether the cookie is sent over HTTPS only. Defaults to true.
+              default: true
+            value:
+              type: string
+              description: The cookie value.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Sets a Set-Cookie header on the client response.
+          defaultSnippets:
+          - label: Insert SetResponseCookie
+            description: Sets a Set-Cookie header on the client response.
+            body:
+              name: $1
+              value: $2
+        SetResponseHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            value:
+              type: string
+              description: The value to set.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Sets (or overwrites) a header in the client response.
+          defaultSnippets:
+          - label: Insert SetResponseHeader
+            description: Sets (or overwrites) a header in the client response.
+            body:
+              name: $1
+              value: $2
+        SetStatus:
+          type: object
+          properties:
+            status:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The HTTP status code to set (100-599).
+          required:
+          - status
+          additionalProperties: false
+          description: Overwrites the HTTP status code of the client response.
+          defaultSnippets:
+          - label: Insert SetStatus
+            description: Overwrites the HTTP status code of the client response.
+            body:
+              status: $1
+        SimpleMetrics:
+          type: object
+          properties:
+            interval:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+            period:
+              type: string
+              pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+              description: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+          required:
+          - period
+          - interval
+          additionalProperties: false
+          defaultSnippets:
+          - label: Insert SimpleMetrics
+            description: Configure SimpleMetrics
+            body:
+              period: $1
+              interval: $2
+        StaticContent:
+          type: object
+          properties:
+            directories:
+              type: array
+              items:
+                type: string
+              description: "The directories to serve files from, in order: a request is answered by the first one that has the file, or a welcome file for the directory asked for, so a higher directory overrides a lower one file by file. One directory is a list of one."
+            fallback:
+              type: string
+              description: "A file, relative to the directories and looked up in their order, served with 200 for a path none of them has, instead of 404: index.html for a single-page app whose routes the browser handles."
+            follow_symlinks:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: Whether to follow symbolic links found under the directories when resolving a file. A listed directory may itself be a symlink (e.g. an atomically swapped 'current' release) without this; enable it only to follow links to files or directories inside them.
+              default: false
+            serve_hidden_files:
+              anyOf:
+              - type: boolean
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "Whether to serve files and directories whose name starts with '.' (e.g. .env, .git/). Disabled by default, in which case such a request is answered 404; .well-known/ is always served."
+              default: false
+          required:
+          - directories
+          additionalProperties: false
+          description: "Serves static files from local directories, the first that has a file answering."
+          defaultSnippets:
+          - label: Insert StaticContent
+            description: "Serves static files from local directories, the first that has a file answering."
+            body:
+              directories: $1
+        StripPathPrefix:
+          type: object
+          properties:
+            parts:
+              anyOf:
+              - type: integer
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: The number of path segments to strip from the beginning of the path.
+          required:
+          - parts
+          additionalProperties: false
+          description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
+          defaultSnippets:
+          - label: Insert StripPathPrefix
+            description: Removes a specified number of leading path segments from the request path before forwarding to the upstream service.
+            body:
+              parts: $1
+        TemplateRedirect:
+          type: object
+          properties:
+            source:
+              type: string
+              description: "The regular expression pattern to match against the request path. Left out, the filter answers every request it sees, and the target can use only {query.NAME} placeholders."
+            status:
+              anyOf:
+              - type: integer
+                minimum: 100
+                maximum: 599
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The HTTP status code to return for the redirect: 301, 302, 303, 307 or 308."
+              default: 302
+            target:
+              type: string
+              description: "The template for the target URL (e.g., /new/$1). A numbered group is $1, a named group {name} and the value of a query parameter {query.NAME}. \\{ is a literal brace."
+          required:
+          - target
+          additionalProperties: false
+          description: Redirects requests based on a path pattern match using a template for the target URL.
+          defaultSnippets:
+          - label: Insert TemplateRedirect
+            description: Redirects requests based on a path pattern match using a template for the target URL.
+            body:
+              target: $1
+      additionalProperties: true
+      minProperties: 1
+      maxProperties: 1
+    - type: string
+      description: Custom SPI implementation
+  group:
+    type: object
+    properties:
+      filters:
+        type: array
+        items:
+          $ref: "#/$defs/groupFilter"
+        description: "Filters for every route of the group: one instance each for the group. They run after the root's and before a route's own on the request."
+      group:
+        type: string
+        description: "A unique identifier for this group, in one namespace with route ids. Journaled as gateway.route.group for each of its routes."
+      journal:
+        type: object
+        properties:
+          on_request:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/predicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                    truncate_body_at:
+                      type: string
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                      errorMessage:
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                    truncate_body_at:
+                      type: string
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                      errorMessage:
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."
+          on_response:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/responsePredicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed."
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                    truncate_body_at:
+                      type: string
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                      errorMessage:
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                - FULL
+                description: The journaling verbosity level.
+              truncate_body_at:
+                type: string
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+          response:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                - FULL
+                description: The journaling verbosity level.
+              truncate_body_at:
+                type: string
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+        additionalProperties: false
+        description: "Journal levels the group's routes inherit, each unless the route names it, and rules checked after a route's own and before the root's."
+      match:
+        type: array
+        items:
+          $ref: "#/$defs/predicate"
+        description: Conditions ANDed before each route's own. Optional; a request this does not match skips the group's routes and goes on to the next entry.
+      routes:
+        type: array
+        items:
+          $ref: "#/$defs/route"
+        description: "The group's routes, tried in order. Groups nest one level: a group holds routes, not groups."
+        minItems: 1
+      upstream:
+        type: object
+        properties:
+          fallback:
+            type: object
+            properties:
+              route_id:
+                type: string
+                description: The ID of another route to execute if this upstream becomes completely unavailable.
+            required:
+            - route_id
+            additionalProperties: false
+          health_check:
+            type: object
+            properties:
+              fall:
+                anyOf:
+                - type: integer
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Number of consecutive failures required to mark target down
+                default: 2
+              interval:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Interval between health checks (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 10s
+              override:
+                anyOf:
+                - type: string
+                  enum:
+                  - NONE
+                  - FORCE_UP
+                  - FORCE_DOWN
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Force state override for targets
+                default: NONE
+              path:
+                type: string
+                pattern: "^(?:/.*|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Must match expected format or be a placeholder ${...}"
+                description: "The URI path used to check the health of the target (e.g., /health)."
+                default: /health
+              rise:
+                anyOf:
+                - type: integer
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Number of consecutive successes required to mark target up
+                default: 2
+            additionalProperties: false
+          preserve_host:
+            anyOf:
+            - type: boolean
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.
+            default: false
+          strategy:
+            anyOf:
+            - type: string
+              enum:
+              - ROUND_ROBIN
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: How requests are spread across the healthy targets.
+            default: ROUND_ROBIN
+          targets:
+            type: array
+            items:
+              type: object
+              properties:
+                url:
+                  type: string
+                  pattern: "^(?:https?://.*|\\$\\{.*\\})$"
+                  errorMessage:
+                    pattern: "Must match expected format or be a placeholder ${...}"
+                  description: The target URL (Must start with http:// or https://).
+              required:
+              - url
+              additionalProperties: false
+            description: "List of backend servers to forward traffic to. Required after inheritance: a route takes it from its group or the root when it names none."
+          timeouts:
+            type: object
+            properties:
+              connect:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Maximum time to wait for a connection to a target, including the TLS handshake for https targets. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 5s
+              read:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Maximum time to wait for a response after sending the request. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 30s
+            additionalProperties: false
+        additionalProperties: false
+        description: "Upstream keys the group's routes inherit, each unless the route names it; keys not named here are inherited from the root."
+    required:
+    - group
+    - routes
+    additionalProperties: false
+    description: "Routes sharing a match, filters and upstream."
+  groupFilter:
+    allOf:
+    - $ref: "#/$defs/filter"
+    - not:
+        anyOf:
+        - type: object
+          required:
+          - CircuitBreaker
+        - type: string
+          enum:
+          - CircuitBreaker
+      description: CircuitBreaker can not be declared on a group.
+  predicate:
+    anyOf:
+    - type: object
+      properties:
+        Cookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            value:
+              type: string
+              description: The exact value the cookie must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if a request contains a specific cookie with an exact value.
+          defaultSnippets:
+          - label: Insert Cookie
+            description: Matches if a request contains a specific cookie with an exact value.
+            body:
+              name: $1
+              value: $2
+        HasCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie to check for.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified cookie, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasCookie
+            description: "Matches if a request contains the specified cookie, regardless of its value."
+            body:
+              name: $1
+        HasQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified query parameter, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasQueryParameter
+            description: "Matches if a request contains the specified query parameter, regardless of its value."
+            body:
+              name: $1
+        HasRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasRequestHeader
+            description: "Matches if a request contains the specified header, regardless of its value."
+            body:
+              name: $1
+        Host:
+          type: object
+          properties:
+            hosts:
+              type: array
+              items:
+                type: string
+              description: List of hostnames to match against.
+          required:
+          - hosts
+          additionalProperties: false
+          description: Matches if the request 'Host' header matches one of the provided hostnames.
+          defaultSnippets:
+          - label: Insert Host
+            description: Matches if the request 'Host' header matches one of the provided hostnames.
+            body:
+              hosts: $1
+        MatchCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            regexp:
+              type: string
+              description: The regular expression the cookie value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a cookie exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchCookie
+            description: Matches if a cookie exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchPath:
+          type: object
+          properties:
+            regexp:
+              type: string
+              description: The regular expression to match against the request path.
+          required:
+          - regexp
+          additionalProperties: false
+          description: Matches the request path against a regular expression.
+          defaultSnippets:
+          - label: Insert MatchPath
+            description: Matches the request path against a regular expression.
+            body:
+              regexp: $1
+        MatchQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            regexp:
+              type: string
+              description: The regular expression the parameter value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a query parameter exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchQueryParameter
+            description: Matches if a query parameter exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a request header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchRequestHeader
+            description: Matches if a request header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        Method:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+              description: "List of allowed HTTP methods (e.g., GET, POST)."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the HTTP method is one of the allowed methods.
+          defaultSnippets:
+          - label: Insert Method
+            description: Matches if the HTTP method is one of the allowed methods.
+            body:
+              include: $1
+        Path:
+          type: object
+          properties:
+            path:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The exact path to match.
+          required:
+          - path
+          additionalProperties: false
+          description: Matches if the request path matches exactly the provided path.
+          defaultSnippets:
+          - label: Insert Path
+            description: Matches if the request path matches exactly the provided path.
+            body:
+              path: $1
+        PathPrefix:
+          type: object
+          properties:
+            prefix:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The path prefix to match.
+          required:
+          - prefix
+          additionalProperties: false
+          description: Matches if the request path starts with the provided prefix.
+          defaultSnippets:
+          - label: Insert PathPrefix
+            description: Matches if the request path starts with the provided prefix.
+            body:
+              prefix: $1
+        QueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The exact value the query parameter must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified query parameter with an exact value.
+          defaultSnippets:
+          - label: Insert QueryParameter
+            description: Matches if the request contains the specified query parameter with an exact value.
+            body:
+              name: $1
+              value: $2
+        RemoteAddr:
+          type: object
+          properties:
+            source:
+              type: string
+              description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
+          required:
+          - source
+          additionalProperties: false
+          description: Matches if the remote IP address falls within the specified CIDR range.
+          defaultSnippets:
+          - label: Insert RemoteAddr
+            description: Matches if the remote IP address falls within the specified CIDR range.
+            body:
+              source: $1
+        RequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the request header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert RequestHeader
+            description: Matches if the request contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        Sample:
+          type: object
+          properties:
+            rate:
+              anyOf:
+              - type: number
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The share of exchanges to match: greater than 0, at most 1 (0.01 is one in a hundred)."
+          required:
+          - rate
+          additionalProperties: false
+          description: "Matches a share of exchanges, drawn once per exchange from a random source."
+        and:
+          type: array
+          items:
+            $ref: "#/$defs/predicate"
+          minItems: 1
+        not:
+          $ref: "#/$defs/predicate"
+        or:
+          type: array
+          items:
+            $ref: "#/$defs/predicate"
+          minItems: 1
+      additionalProperties: true
+      minProperties: 1
+      maxProperties: 1
+    - type: string
+      description: Custom SPI implementation
+  responsePredicate:
+    anyOf:
+    - type: object
+      properties:
+        Cookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            value:
+              type: string
+              description: The exact value the cookie must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if a request contains a specific cookie with an exact value.
+          defaultSnippets:
+          - label: Insert Cookie
+            description: Matches if a request contains a specific cookie with an exact value.
+            body:
+              name: $1
+              value: $2
+        HasCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie to check for.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified cookie, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasCookie
+            description: "Matches if a request contains the specified cookie, regardless of its value."
+            body:
+              name: $1
+        HasQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified query parameter, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasQueryParameter
+            description: "Matches if a request contains the specified query parameter, regardless of its value."
+            body:
+              name: $1
+        HasRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasRequestHeader
+            description: "Matches if a request contains the specified header, regardless of its value."
+            body:
+              name: $1
+        HasResponseHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if the response contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasResponseHeader
+            description: "Matches if the response contains the specified header, regardless of its value."
+            body:
+              name: $1
+        Host:
+          type: object
+          properties:
+            hosts:
+              type: array
+              items:
+                type: string
+              description: List of hostnames to match against.
+          required:
+          - hosts
+          additionalProperties: false
+          description: Matches if the request 'Host' header matches one of the provided hostnames.
+          defaultSnippets:
+          - label: Insert Host
+            description: Matches if the request 'Host' header matches one of the provided hostnames.
+            body:
+              hosts: $1
+        MatchCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            regexp:
+              type: string
+              description: The regular expression the cookie value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a cookie exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchCookie
+            description: Matches if a cookie exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchPath:
+          type: object
+          properties:
+            regexp:
+              type: string
+              description: The regular expression to match against the request path.
+          required:
+          - regexp
+          additionalProperties: false
+          description: Matches the request path against a regular expression.
+          defaultSnippets:
+          - label: Insert MatchPath
+            description: Matches the request path against a regular expression.
+            body:
+              regexp: $1
+        MatchQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            regexp:
+              type: string
+              description: The regular expression the parameter value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a query parameter exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchQueryParameter
+            description: Matches if a query parameter exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a request header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchRequestHeader
+            description: Matches if a request header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchResponseHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a response header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchResponseHeader
+            description: Matches if a response header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        Method:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+              description: "List of allowed HTTP methods (e.g., GET, POST)."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the HTTP method is one of the allowed methods.
+          defaultSnippets:
+          - label: Insert Method
+            description: Matches if the HTTP method is one of the allowed methods.
+            body:
+              include: $1
+        Path:
+          type: object
+          properties:
+            path:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The exact path to match.
+          required:
+          - path
+          additionalProperties: false
+          description: Matches if the request path matches exactly the provided path.
+          defaultSnippets:
+          - label: Insert Path
+            description: Matches if the request path matches exactly the provided path.
+            body:
+              path: $1
+        PathPrefix:
+          type: object
+          properties:
+            prefix:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The path prefix to match.
+          required:
+          - prefix
+          additionalProperties: false
+          description: Matches if the request path starts with the provided prefix.
+          defaultSnippets:
+          - label: Insert PathPrefix
+            description: Matches if the request path starts with the provided prefix.
+            body:
+              prefix: $1
+        QueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The exact value the query parameter must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified query parameter with an exact value.
+          defaultSnippets:
+          - label: Insert QueryParameter
+            description: Matches if the request contains the specified query parameter with an exact value.
+            body:
+              name: $1
+              value: $2
+        RemoteAddr:
+          type: object
+          properties:
+            source:
+              type: string
+              description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
+          required:
+          - source
+          additionalProperties: false
+          description: Matches if the remote IP address falls within the specified CIDR range.
+          defaultSnippets:
+          - label: Insert RemoteAddr
+            description: Matches if the remote IP address falls within the specified CIDR range.
+            body:
+              source: $1
+        RequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the request header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert RequestHeader
+            description: Matches if the request contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        ResponseHeader:
+          type: object
+          properties:
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
+            name:
+              type: string
+              description: The name of the response header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the response contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert ResponseHeader
+            description: Matches if the response contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        Sample:
+          type: object
+          properties:
+            rate:
+              anyOf:
+              - type: number
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The share of exchanges to match: greater than 0, at most 1 (0.01 is one in a hundred)."
+          required:
+          - rate
+          additionalProperties: false
+          description: "Matches a share of exchanges, drawn once per exchange from a random source."
+        Status:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                anyOf:
+                - type: integer
+                  minimum: 100
+                  maximum: 599
+                - type: string
+              description: "Status codes (404) and classes (5xx, case-insensitive) that match."
+            leg:
+              type: string
+              enum:
+              - client
+              - upstream
+              description: "Which response to test: client (the default), the one the client receives, or upstream, the one the upstream sent."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the response status is one of the listed codes or classes.
+          defaultSnippets:
+          - label: Insert Status
+            description: Matches if the response status is one of the listed codes or classes.
+            body:
+              include: $1
+        and:
+          type: array
+          items:
+            $ref: "#/$defs/responsePredicate"
+          minItems: 1
+        not:
+          $ref: "#/$defs/responsePredicate"
+        or:
+          type: array
+          items:
+            $ref: "#/$defs/responsePredicate"
+          minItems: 1
+      additionalProperties: true
+      minProperties: 1
+      maxProperties: 1
+    - type: string
+      description: Custom SPI implementation
+  rootFilter:
+    allOf:
+    - $ref: "#/$defs/filter"
+    - not:
+        anyOf:
+        - type: object
+          required:
+          - CircuitBreaker
+        - type: string
+          enum:
+          - CircuitBreaker
+      description: CircuitBreaker can not be declared on the root.
+  route:
+    type: object
+    properties:
+      filters:
+        type: array
+        items:
+          $ref: "#/$defs/routeFilter"
+        description: "A list of processing steps applied to the request before forwarding, and to the response before returning."
+      id:
+        type: string
+        description: "A unique identifier for this route. Used for logging, metrics, and fallback references."
+      journal:
+        type: object
+        properties:
+          on_request:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/predicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                    truncate_body_at:
+                      type: string
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                      errorMessage:
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                    truncate_body_at:
+                      type: string
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                      errorMessage:
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."
+          on_response:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/responsePredicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed."
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      - FULL
+                      description: The journaling verbosity level.
+                    truncate_body_at:
+                      type: string
+                      pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                      errorMessage:
+                        pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                      description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                - FULL
+                description: The journaling verbosity level.
+              truncate_body_at:
+                type: string
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+          response:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                - FULL
+                description: The journaling verbosity level.
+              truncate_body_at:
+                type: string
+                pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+        additionalProperties: false
+        description: "The route's journal: each key not named here is inherited from its group, then the root, and its rules are checked before theirs."
+      match:
+        type: array
+        items:
+          $ref: "#/$defs/predicate"
+        description: "Conditions that must be met for this route to handle a request. Required; an empty list (match: []) matches nothing, for a route reached only as a fallback."
+      upstream:
+        type: object
+        properties:
+          fallback:
+            type: object
+            properties:
+              route_id:
+                type: string
+                description: The ID of another route to execute if this upstream becomes completely unavailable.
+            required:
+            - route_id
+            additionalProperties: false
+          health_check:
+            type: object
+            properties:
+              fall:
+                anyOf:
+                - type: integer
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Number of consecutive failures required to mark target down
+                default: 2
+              interval:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Interval between health checks (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 10s
+              override:
+                anyOf:
+                - type: string
+                  enum:
+                  - NONE
+                  - FORCE_UP
+                  - FORCE_DOWN
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Force state override for targets
+                default: NONE
+              path:
+                type: string
+                pattern: "^(?:/.*|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Must match expected format or be a placeholder ${...}"
+                description: "The URI path used to check the health of the target (e.g., /health)."
+                default: /health
+              rise:
+                anyOf:
+                - type: integer
+                - type: string
+                  pattern: "^\\$\\{.*\\}$"
+                description: Number of consecutive successes required to mark target up
+                default: 2
+            additionalProperties: false
+          preserve_host:
+            anyOf:
+            - type: boolean
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.
+            default: false
+          strategy:
+            anyOf:
+            - type: string
+              enum:
+              - ROUND_ROBIN
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: How requests are spread across the healthy targets.
+            default: ROUND_ROBIN
+          targets:
+            type: array
+            items:
+              type: object
+              properties:
+                url:
+                  type: string
+                  pattern: "^(?:https?://.*|\\$\\{.*\\})$"
+                  errorMessage:
+                    pattern: "Must match expected format or be a placeholder ${...}"
+                  description: The target URL (Must start with http:// or https://).
+              required:
+              - url
+              additionalProperties: false
+            description: "List of backend servers to forward traffic to. Required after inheritance: a route takes it from its group or the root when it names none."
+          timeouts:
+            type: object
+            properties:
+              connect:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Maximum time to wait for a connection to a target, including the TLS handshake for https targets. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 5s
+              read:
+                type: string
+                pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+                errorMessage:
+                  pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+                description: "Maximum time to wait for a response after sending the request. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+                default: 30s
+            additionalProperties: false
+        additionalProperties: false
+        description: "Where this route forwards requests. Each key not named here is inherited from the route's group, then the root."
+    required:
+    - id
+    - match
+    additionalProperties: false
+    description: Defines a single traffic route and its associated behaviors.
+  routeFilter:
+    $ref: "#/$defs/filter"
+  unroutedPredicate:
+    anyOf:
+    - type: object
+      properties:
+        Cookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            value:
+              type: string
+              description: The exact value the cookie must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if a request contains a specific cookie with an exact value.
+          defaultSnippets:
+          - label: Insert Cookie
+            description: Matches if a request contains a specific cookie with an exact value.
+            body:
+              name: $1
+              value: $2
+        HasCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie to check for.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified cookie, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasCookie
+            description: "Matches if a request contains the specified cookie, regardless of its value."
+            body:
+              name: $1
+        HasQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified query parameter, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasQueryParameter
+            description: "Matches if a request contains the specified query parameter, regardless of its value."
+            body:
+              name: $1
+        HasRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+          required:
+          - name
+          additionalProperties: false
+          description: "Matches if a request contains the specified header, regardless of its value."
+          defaultSnippets:
+          - label: Insert HasRequestHeader
+            description: "Matches if a request contains the specified header, regardless of its value."
+            body:
+              name: $1
+        Host:
+          type: object
+          properties:
+            hosts:
+              type: array
+              items:
+                type: string
+              description: List of hostnames to match against.
+          required:
+          - hosts
+          additionalProperties: false
+          description: Matches if the request 'Host' header matches one of the provided hostnames.
+          defaultSnippets:
+          - label: Insert Host
+            description: Matches if the request 'Host' header matches one of the provided hostnames.
+            body:
+              hosts: $1
+        MatchCookie:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the cookie.
+            regexp:
+              type: string
+              description: The regular expression the cookie value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a cookie exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchCookie
+            description: Matches if a cookie exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchPath:
+          type: object
+          properties:
+            regexp:
+              type: string
+              description: The regular expression to match against the request path.
+          required:
+          - regexp
+          additionalProperties: false
+          description: Matches the request path against a regular expression.
+          defaultSnippets:
+          - label: Insert MatchPath
+            description: Matches the request path against a regular expression.
+            body:
+              regexp: $1
+        MatchQueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            regexp:
+              type: string
+              description: The regular expression the parameter value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a query parameter exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchQueryParameter
+            description: Matches if a query parameter exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        MatchRequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the header.
+            regexp:
+              type: string
+              description: The regular expression the header value must match.
+          required:
+          - name
+          - regexp
+          additionalProperties: false
+          description: Matches if a request header exists and its value matches the provided regular expression.
+          defaultSnippets:
+          - label: Insert MatchRequestHeader
+            description: Matches if a request header exists and its value matches the provided regular expression.
+            body:
+              name: $1
+              regexp: $2
+        Method:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+              description: "List of allowed HTTP methods (e.g., GET, POST)."
+          required:
+          - include
+          additionalProperties: false
+          description: Matches if the HTTP method is one of the allowed methods.
+          defaultSnippets:
+          - label: Insert Method
+            description: Matches if the HTTP method is one of the allowed methods.
+            body:
+              include: $1
+        Path:
+          type: object
+          properties:
+            path:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The exact path to match.
+          required:
+          - path
+          additionalProperties: false
+          description: Matches if the request path matches exactly the provided path.
+          defaultSnippets:
+          - label: Insert Path
+            description: Matches if the request path matches exactly the provided path.
+            body:
+              path: $1
+        PathPrefix:
+          type: object
+          properties:
+            prefix:
+              type: string
+              pattern: "^(?:/.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The path prefix to match.
+          required:
+          - prefix
+          additionalProperties: false
+          description: Matches if the request path starts with the provided prefix.
+          defaultSnippets:
+          - label: Insert PathPrefix
+            description: Matches if the request path starts with the provided prefix.
+            body:
+              prefix: $1
+        QueryParameter:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the query parameter.
+            value:
+              type: string
+              description: The exact value the query parameter must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified query parameter with an exact value.
+          defaultSnippets:
+          - label: Insert QueryParameter
+            description: Matches if the request contains the specified query parameter with an exact value.
+            body:
+              name: $1
+              value: $2
+        RemoteAddr:
+          type: object
+          properties:
+            source:
+              type: string
+              description: "The IP or CIDR range to match (e.g., 192.168.1.0/24)."
+          required:
+          - source
+          additionalProperties: false
+          description: Matches if the remote IP address falls within the specified CIDR range.
+          defaultSnippets:
+          - label: Insert RemoteAddr
+            description: Matches if the remote IP address falls within the specified CIDR range.
+            body:
+              source: $1
+        RequestHeader:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the request header.
+            value:
+              type: string
+              description: The exact value the header must hold.
+          required:
+          - name
+          - value
+          additionalProperties: false
+          description: Matches if the request contains the specified header with an exact value.
+          defaultSnippets:
+          - label: Insert RequestHeader
+            description: Matches if the request contains the specified header with an exact value.
+            body:
+              name: $1
+              value: $2
+        Sample:
+          type: object
+          properties:
+            rate:
+              anyOf:
+              - type: number
+              - type: string
+                pattern: "^\\$\\{.*\\}$"
+              description: "The share of exchanges to match: greater than 0, at most 1 (0.01 is one in a hundred)."
+          required:
+          - rate
+          additionalProperties: false
+          description: "Matches a share of exchanges, drawn once per exchange from a random source."
+        UnroutedReason:
+          type: object
+          properties:
+            include:
+              type: array
+              items:
+                type: string
+                enum:
+                - no_route
+                - trace
+                - ambiguous_path
+                - transfer_encoding
+                - regex_budget
+              description: "The reasons to match: no_route (404), trace (501), ambiguous_path (400), transfer_encoding (400), regex_budget (500)."
+              minItems: 1
+          required:
+          - include
+          additionalProperties: false
+          description: Matches requests refused before routing for one of these reasons. Only under unrouted.
+        and:
+          type: array
+          items:
+            $ref: "#/$defs/unroutedPredicate"
+          minItems: 1
+        not:
+          $ref: "#/$defs/unroutedPredicate"
+        or:
+          type: array
+          items:
+            $ref: "#/$defs/unroutedPredicate"
+          minItems: 1
+      additionalProperties: true
+      minProperties: 1
+      maxProperties: 1
+    - type: string
+      description: Custom SPI implementation
+properties:
+  filters:
+    type: array
+    items:
+      $ref: "#/$defs/rootFilter"
+    description: "Filters for every route: one instance each for the whole gateway. They run before a group's and a route's on the request, and after them on the response."
+  journal:
+    type: object
+    properties:
+      on_request:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: string
+              description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+            match:
+              type: array
+              items:
+                $ref: "#/$defs/predicate"
+              description: Conditions that must all hold for the rule to fire.
+              minItems: 1
+            request:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                  description: The journaling verbosity level.
+                truncate_body_at:
+                  type: string
+                  pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                  errorMessage:
+                    pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+            response:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                  description: The journaling verbosity level.
+                truncate_body_at:
+                  type: string
+                  pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                  errorMessage:
+                    pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+          required:
+          - match
+          additionalProperties: false
+          anyOf:
+          - required:
+            - request
+          - required:
+            - response
+          description: "When match holds, the directions named here replace the levels resolved so far."
+        description: "Rules checked once the route is chosen, before its filters run: the client request as sent. Per direction, the first matching rule naming it wins; a route's rules are checked before its group's, then the root's."
+      on_response:
+        type: array
+        items:
+          type: object
+          properties:
+            id:
+              type: string
+              description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+            match:
+              type: array
+              items:
+                $ref: "#/$defs/responsePredicate"
+              description: Conditions that must all hold for the rule to fire.
+              minItems: 1
+            request:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  description: "The journaling verbosity level. FULL cannot be set once the response is decided: the request body has already streamed."
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+            response:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum:
+                  - NONE
+                  - HEADERS
+                  - METADATA
+                  - FULL
+                  description: The journaling verbosity level.
+                truncate_body_at:
+                  type: string
+                  pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+                  errorMessage:
+                    pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+                  description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+              additionalProperties: false
+              minProperties: 1
+              description: Journal settings for this direction of the exchange.
+          required:
+          - match
+          additionalProperties: false
+          anyOf:
+          - required:
+            - request
+          - required:
+            - response
+          description: "When match holds, the directions named here replace the levels resolved so far."
+        description: "Rules checked once the response head is final, before it is written; they override what on_request resolved. A request level that is or can become FULL cannot be changed here."
+      request:
+        type: object
+        properties:
+          level:
+            type: string
+            enum:
+            - NONE
+            - HEADERS
+            - METADATA
+            - FULL
+            description: The journaling verbosity level.
+          truncate_body_at:
+            type: string
+            pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+            errorMessage:
+              pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+            description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+        additionalProperties: false
+        minProperties: 1
+        description: Journal settings for this direction of the exchange.
+      response:
+        type: object
+        properties:
+          level:
+            type: string
+            enum:
+            - NONE
+            - HEADERS
+            - METADATA
+            - FULL
+            description: The journaling verbosity level.
+          truncate_body_at:
+            type: string
+            pattern: "^(?:[0-9]+([bB]|[kKmMgG][bB])?|\\$\\{.*\\})$"
+            errorMessage:
+              pattern: "Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...}"
+            description: "At FULL, the journal keeps the body's first truncate_body_at bytes and records that it stopped. The body still streams whole. Ignored below FULL. (Format: <number>[unit] (e.g., 1024, 10KB, 200MB) or a placeholder ${...})"
+        additionalProperties: false
+        minProperties: 1
+        description: Journal settings for this direction of the exchange.
+    additionalProperties: false
+    description: "Journal levels every route inherits, each unless its group or the route names it, and rules checked after theirs. A route nothing names is journaled at NONE."
+  routes:
+    type: array
+    items:
+      oneOf:
+      - $ref: "#/$defs/route"
+      - $ref: "#/$defs/group"
+    description: "The routing table, tried in order: routes (id) and groups of routes (group). The first route that matches takes the request."
+  unrouted:
+    type: object
+    properties:
+      journal:
+        type: object
+        properties:
+          on_request:
+            type: array
+            items:
+              type: object
+              properties:
+                id:
+                  type: string
+                  description: "A label, unique among all rules in the file, journaled in gateway.journal.rule in place of the rule's path when it fires."
+                match:
+                  type: array
+                  items:
+                    $ref: "#/$defs/unroutedPredicate"
+                  description: Conditions that must all hold for the rule to fire.
+                  minItems: 1
+                request:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+                response:
+                  type: object
+                  properties:
+                    level:
+                      type: string
+                      enum:
+                      - NONE
+                      - HEADERS
+                      - METADATA
+                      description: The journaling verbosity level.
+                  additionalProperties: false
+                  minProperties: 1
+                  description: Journal settings for this direction of the exchange.
+              required:
+              - match
+              additionalProperties: false
+              anyOf:
+              - required:
+                - request
+              - required:
+                - response
+              description: "When match holds, the directions named here replace the levels resolved so far."
+            description: "Rules checked on every refusal. Per direction, the first matching rule naming it wins. A rule that tests the request anywhere in its match is checked only on no_route; one made only of UnroutedReason and Sample is checked on every refusal."
+          request:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                description: The journaling verbosity level.
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+          response:
+            type: object
+            properties:
+              level:
+                type: string
+                enum:
+                - NONE
+                - HEADERS
+                - METADATA
+                description: The journaling verbosity level.
+            additionalProperties: false
+            minProperties: 1
+            description: Journal settings for this direction of the exchange.
+        additionalProperties: false
+        description: Journal levels and on_request rules for requests refused before any route is chosen. Not inherited from the root journal. FULL is not allowed.
+    required:
+    - journal
+    additionalProperties: false
+    description: "Journaling for requests refused before routing (no route, ambiguous path, bad Transfer-Encoding, TRACE, regex budget), recorded under route ID <unrouted>."
+  upstream:
+    type: object
+    properties:
+      fallback:
+        type: object
+        properties:
+          route_id:
+            type: string
+            description: The ID of another route to execute if this upstream becomes completely unavailable.
+        required:
+        - route_id
+        additionalProperties: false
+      health_check:
+        type: object
+        properties:
+          fall:
+            anyOf:
+            - type: integer
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: Number of consecutive failures required to mark target down
+            default: 2
+          interval:
+            type: string
+            pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+            errorMessage:
+              pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+            description: "Interval between health checks (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+            default: 10s
+          override:
+            anyOf:
+            - type: string
+              enum:
+              - NONE
+              - FORCE_UP
+              - FORCE_DOWN
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: Force state override for targets
+            default: NONE
+          path:
+            type: string
+            pattern: "^(?:/.*|\\$\\{.*\\})$"
+            errorMessage:
+              pattern: "Must match expected format or be a placeholder ${...}"
+            description: "The URI path used to check the health of the target (e.g., /health)."
+            default: /health
+          rise:
+            anyOf:
+            - type: integer
+            - type: string
+              pattern: "^\\$\\{.*\\}$"
+            description: Number of consecutive successes required to mark target up
+            default: 2
+        additionalProperties: false
+      preserve_host:
+        anyOf:
+        - type: boolean
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: Send the client's Host header to the target instead of the target's own. TLS server name indication and certificate checks still use the target's host.
+        default: false
+      strategy:
+        anyOf:
+        - type: string
+          enum:
+          - ROUND_ROBIN
+        - type: string
+          pattern: "^\\$\\{.*\\}$"
+        description: How requests are spread across the healthy targets.
+        default: ROUND_ROBIN
+      targets:
+        type: array
+        items:
+          type: object
+          properties:
+            url:
+              type: string
+              pattern: "^(?:https?://.*|\\$\\{.*\\})$"
+              errorMessage:
+                pattern: "Must match expected format or be a placeholder ${...}"
+              description: The target URL (Must start with http:// or https://).
+          required:
+          - url
+          additionalProperties: false
+        description: "List of backend servers to forward traffic to. Required after inheritance: a route takes it from its group or the root when it names none."
+      timeouts:
+        type: object
+        properties:
+          connect:
+            type: string
+            pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+            errorMessage:
+              pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+            description: "Maximum time to wait for a connection to a target, including the TLS handshake for https targets. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+            default: 5s
+          read:
+            type: string
+            pattern: "^(?:[0-9]+\\s*(ns|us|ms|s|m|h|d|NS|US|MS|S|M|H|D)|\\$\\{.*\\})$"
+            errorMessage:
+              pattern: "Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...}"
+            description: "Maximum time to wait for a response after sending the request. (Format: <number><unit> (e.g., 2s, 5m, 100ms) or a placeholder ${...})"
+            default: 30s
+        additionalProperties: false
+    additionalProperties: false
+    description: "Upstream keys every route inherits, each unless its group or the route names it."
+  version:
+    type: string
+    description: "A version label for this file, logged with the file's source digest on every load and shown by the management API."

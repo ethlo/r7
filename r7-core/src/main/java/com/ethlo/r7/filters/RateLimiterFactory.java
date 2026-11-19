@@ -1,0 +1,336 @@
+package com.ethlo.r7.filters;
+
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.StringJoiner;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.LongAdder;
+
+import com.ethlo.r7.api.ClientRequestGatewayExchange;
+import com.ethlo.r7.api.ClientRequestGatewayFilter;
+import com.ethlo.r7.api.ClientResponseGatewayExchange;
+import com.ethlo.r7.api.ClientResponseGatewayFilter;
+import com.ethlo.r7.api.ComponentStatus;
+import com.ethlo.r7.api.MutableGatewayHeaders;
+import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.StateKey;
+import com.ethlo.r7.api.StatusReporting;
+import com.ethlo.r7.core.GatewayContextKeys;
+import com.ethlo.r7.doc.DefaultValue;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Nullable;
+import com.ethlo.r7.spi.FilterCreationContext;
+import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.ShortCircuitGatewayResponse;
+import com.ethlo.r7.util.MutableFastGatewayHeaders;
+import com.ethlo.r7.util.ValidatorUtils;
+import com.ethlo.r7.util.constants.HttpHeaders;
+import com.ethlo.r7.util.constants.HttpStatuses;
+import com.ethlo.r7.validation.ValidatableConfig;
+import com.ethlo.r7.validation.ValidationResult;
+import com.ethlo.r7.util.constants.MediaTypes;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.google.auto.service.AutoService;
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.ConsumptionProbe;
+
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+@Description("""
+        Local rate-limiter useful for avoiding overload by demanding users""")
+public final class RateLimiterFactory implements GatewayFilterFactory<RateLimiterFactory.Config>
+{
+    private static final byte[] REJECT_PAYLOAD = "Rate limit exceeded".getBytes(StandardCharsets.UTF_8);
+    private static final String FILTER_NAME = "RateLimiter";
+    private static final StateKey<Long> REMAINING_TOKENS_KEY = new StateKey<>("remaining_tokens");
+
+    @Override
+    public String name()
+    {
+        return FILTER_NAME;
+    }
+
+    @Override
+    public Class<Config> configClass()
+    {
+        return Config.class;
+    }
+
+    @Override
+    public ClientRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
+    {
+        return new GF(config);
+    }
+
+    public record Config(@Description("The maximum number of tokens the bucket can hold. This defines the absolute burst limit.")
+                         Long capacity,
+
+                         @Description("The number of tokens added to the bucket at the end of every refill period.")
+                         Long refillTokens,
+
+                         @Description("The time interval between token refills (e.g., 1s, 500ms).")
+                         Duration refillPeriod,
+
+                         @Nullable
+                         @Description("The maximum number of distinct client buckets to track in memory. Limits memory consumption under heavy load.")
+                         @DefaultValue("100000")
+                         Long maxBuckets,
+
+                         @Nullable
+                         @Description("How long a bucket remains in memory after its last access before being purged.")
+                         @DefaultValue("10m")
+                         Duration maxBucketTTL,
+
+                         @Nullable
+                         @Description("How many leading bits of an IPv6 client address identify one client. "
+                                 + "A single subscriber is typically assigned a whole /64 and can use any address in it, "
+                                 + "so limiting per full address lets one client take as many buckets as it likes.")
+                         @DefaultValue("64")
+                         Integer ipv6PrefixLength) implements ValidatableConfig
+    {
+        private static final int DEFAULT_IPV6_PREFIX_LENGTH = 64;
+
+        @Override
+        public Integer ipv6PrefixLength()
+        {
+            return Optional.ofNullable(this.ipv6PrefixLength).orElse(DEFAULT_IPV6_PREFIX_LENGTH);
+        }
+
+        private static final long DEFAULT_MAX_BUCKETS = 10_000L;
+        private static final long MINIMUM_EXPIRY_TIME_MILLIS = Duration.ofSeconds(30).toMillis();
+
+        @Override
+        public Duration maxBucketTTL()
+        {
+            if (this.maxBucketTTL != null)
+            {
+                return this.maxBucketTTL;
+            }
+
+            if (this.refillPeriod == null || this.capacity == null || this.refillTokens == null || this.refillTokens <= 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                // A bucket evicted before it could refill from empty to full hands a returning,
+                // merely idle client a brand-new full bucket: its consumed tokens are erased for
+                // free. The TTL must therefore cover at least the full-refill time - a fixed
+                // multiple of the refill period (the old rule) is only correct when capacity
+                // happens to equal refillTokens, and undercounts by exactly that ratio otherwise.
+                final long refillPeriods = -Math.floorDiv(-this.capacity, this.refillTokens); // ceil(capacity / refillTokens)
+                final long fullRefillMillis = Math.multiplyExact(refillPeriods, this.refillPeriod.toMillis());
+                return Duration.ofMillis(Math.max(fullRefillMillis, MINIMUM_EXPIRY_TIME_MILLIS));
+            }
+            catch (final ArithmeticException e)
+            {
+                return null;
+            }
+        }
+
+        @Override
+        public Long maxBuckets()
+        {
+            return Optional.ofNullable(maxBuckets).orElse(DEFAULT_MAX_BUCKETS);
+        }
+
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            if (this.ipv6PrefixLength() < 1 || this.ipv6PrefixLength() > 128)
+            {
+                result.addError("ipv6_prefix_length", "must be between 1 and 128");
+            }
+            new ValidatorUtils(result)
+                    .requirePositive("capacity", capacity())
+                    .requirePositive("refill_tokens", refillTokens())
+                    .requirePositive("refill_period", refillPeriod())
+                    .requirePositive("max_buckets", maxBuckets())
+                    .requirePositive("max_bucket_ttl", maxBucketTTL())
+                    .ifValid(() ->
+                    {
+                        try
+                        {
+                            new GF(this).createNewBucket("_config_test");
+                        }
+                        catch (final ArithmeticException e)
+                        {
+                            result.addError(
+                                    "refill_tokens/refill_period",
+                                    "Tokens * Period product is too large, causing overflow. Reduce one or both values."
+                            );
+                        }
+                        catch (final IllegalArgumentException e)
+                        {
+                            // Strictly catch Bucket4j's 1 token/ns physical limit.
+                            // Rethrow anything else so we don't swallow unrelated bugs.
+                            if (e.getMessage() != null && e.getMessage().contains("highest supported rate"))
+                            {
+                                result.addError(
+                                        "refill_tokens/refill_period",
+                                        "Rate exceeds the maximum supported limit of 1 token per nanosecond."
+                                );
+                            }
+                            else
+                            {
+                                throw e;
+                            }
+                        }
+                    });
+        }
+
+        @Override
+        public String toString()
+        {
+            return new StringJoiner(", ", Config.class.getSimpleName() + "[", "]")
+                    .add("capacity=" + capacity())
+                    .add("refillTokens=" + refillTokens())
+                    .add("refillPeriod=" + refillPeriod())
+                    .add("maxBuckets=" + maxBuckets())
+                    .add("maxBucketTTL=" + maxBucketTTL())
+                    .toString();
+        }
+    }
+
+    /**
+     * The bucket key for a client address: an IPv4 address as is, an IPv6 address by its
+     * leading {@code ipv6PrefixLength} bits. A client with no known address shares one bucket
+     * rather than failing the request.
+     */
+    static String clientKey(final InetAddress address, final int ipv6PrefixLength)
+    {
+        if (address == null)
+        {
+            return "unknown";
+        }
+        if (!(address instanceof Inet6Address))
+        {
+            return address.getHostAddress();
+        }
+        final byte[] bytes = address.getAddress();
+        final int fullBytes = ipv6PrefixLength / 8;
+        final int remainingBits = ipv6PrefixLength % 8;
+        if (fullBytes < bytes.length)
+        {
+            bytes[fullBytes] &= (byte) (0xFF << (8 - remainingBits));
+            for (int i = fullBytes + 1; i < bytes.length; i++)
+            {
+                bytes[i] = 0;
+            }
+        }
+        return HexFormat.of().formatHex(bytes) + "/" + ipv6PrefixLength;
+    }
+
+    private static final class GF implements ClientRequestGatewayFilter, ClientResponseGatewayFilter, ShortInfo, StatusReporting
+    {
+        private final Bandwidth limit; // Calculate this once
+        private final Cache<String, Bucket> buckets;
+        private final Config config;
+        private final String capacityString;
+        private final LongAdder rejected = new LongAdder();
+
+        public GF(final Config config)
+        {
+            this.config = config;
+            this.capacityString = Long.toString(config.capacity());
+            this.buckets = Caffeine.newBuilder()
+                    .maximumSize(config.maxBuckets())
+                    .expireAfterAccess(config.maxBucketTTL())
+                    .build();
+
+            this.limit = Bandwidth.builder()
+                    .capacity(config.capacity())
+                    .refillGreedy(config.refillTokens(), config.refillPeriod())
+                    .build();
+        }
+
+        @Override
+        public void onClientRequest(final ClientRequestGatewayExchange exchange)
+        {
+            final String customKey = exchange.getAttachment(GatewayContextKeys.RATE_LIMIT_KEY);
+            final String key = (customKey != null) ? customKey : RateLimiterFactory.clientKey(exchange.clientRequest().remoteAddress(), this.config.ipv6PrefixLength());
+
+            final Bucket bucket = this.buckets.get(key, this::createNewBucket);
+            final ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1L);
+            exchange.setAttachment(REMAINING_TOKENS_KEY, probe.getRemainingTokens());
+
+            if (!probe.isConsumed())
+            {
+                this.rejected.increment();
+                final long waitNanos = probe.getNanosToWaitForRefill();
+                final long waitSeconds = TimeUnit.NANOSECONDS.toSeconds(waitNanos) + 1L;
+
+                final MutableGatewayHeaders headers = new MutableFastGatewayHeaders(4)
+                        .set(HttpHeaders.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8)
+                        .set(HttpHeaders.RETRY_AFTER, String.valueOf(waitSeconds))
+                        .set(HttpHeaders.X_RATELIMIT_LIMIT, this.capacityString)
+                        .set(HttpHeaders.X_RATELIMIT_REMAINING, "0");
+
+                exchange.shortCircuit(new ShortCircuitGatewayResponse(headers, HttpStatuses.TOO_MANY_REQUESTS, ByteBuffer.wrap(REJECT_PAYLOAD)));
+            }
+        }
+
+        private Bucket createNewBucket(final String key)
+        {
+            return Bucket.builder()
+                    .addLimit(limit)
+                    .build();
+        }
+
+        @Override
+        public void onClientResponse(final ClientResponseGatewayExchange exchange)
+        {
+            final Long remainingTokens = exchange.getAttachment(REMAINING_TOKENS_KEY);
+            if (remainingTokens != null)
+            {
+                exchange.clientResponse().headers().set(HttpHeaders.X_RATELIMIT_LIMIT, this.capacityString);
+                exchange.clientResponse().headers().set(HttpHeaders.X_RATELIMIT_REMAINING, String.valueOf(remainingTokens));
+            }
+        }
+
+        @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
+        public String summary()
+        {
+            return new StringJoiner(", ", FILTER_NAME + "[", "]")
+                    .add("capacity=" + this.config.capacity())
+                    .add("refill_tokens=" + this.config.refillTokens())
+                    .add("refill_period=" + this.config.refillPeriod())
+                    .toString();
+        }
+
+        /**
+         * A warning once the limiter tracks as many clients as {@code max_buckets} allows: from
+         * then on it evicts buckets early, and an evicted client returns with a full bucket, so
+         * the limit holds less tightly than configured.
+         */
+        @Override
+        public ComponentStatus status()
+        {
+            final long tracked = this.buckets.estimatedSize();
+            final Map<String, Long> values = new LinkedHashMap<>();
+            values.put("rejected_requests", this.rejected.sum());
+            values.put("tracked_clients", tracked);
+            if (tracked >= this.config.maxBuckets())
+            {
+                return new ComponentStatus(ComponentStatus.Health.WARN, "Tracking max_buckets (" + this.config.maxBuckets() + ") clients: idle ones are evicted early", values);
+            }
+            return new ComponentStatus(ComponentStatus.Health.OK, null, values);
+        }
+    }
+}

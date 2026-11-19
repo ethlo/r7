@@ -1,0 +1,21 @@
+bench=bench.sh --image ghcr.io/ethlo/r7-gateway:main --gc default
+gateway=ghcr.io/ethlo/r7-gateway@sha256:292e25edcc827cda7cfc1fce81cc2e86935539e21078794835159524d67e1a19
+image_jdk=OpenJDK Runtime Environment Temurin-27+35 (build 27+35)
+wrk_commit=a211dd5a7050b1f9e8a9870b95513060e72ac4a0 wrk2_commit=44a94c17d8e6a0bac8559b53da76848e430cb7a7
+git=2d06d07 dirty=no
+layout: os=0 backend=2 gateway=8,10 load=4,6
+tuning=smt=off turbo=off governor=performance sysctls isolation=systemd(os=0)
+not_tuned=none
+cpu=12th Gen Intel(R) Core(TM) i5-12500
+kernel=6.8.0-142-generic
+cmdline=BOOT_IMAGE=/boot/vmlinuz-6.8.0-142-generic root=UUID=6a799996-dff5-42a1-9b9e-591e7ed5bbd0 ro video=HDMI-A-3:3840x2160@60
+isolcpus=
+smt=off
+no_turbo=1
+boost=n/a
+governors=6 performance
+online=0,2,4,6,8,10
+memory=62 GiB
+systemd=yes
+cgroup_v2=yes
+docker_cgroup_driver=systemd

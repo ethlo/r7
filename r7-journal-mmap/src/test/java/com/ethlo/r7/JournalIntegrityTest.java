@@ -1,0 +1,2063 @@
+package com.ethlo.r7;
+
+import static com.ethlo.r7.R7fTestFraming.entriesOf;
+import static com.ethlo.r7.R7fTestFraming.rewriteSequence;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.InetAddress;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import com.ethlo.r7.api.IpSource;
+import com.ethlo.r7.journal.api.BodyChecksum;
+import com.ethlo.r7.journal.api.ExchangeCompletionListener;
+import com.ethlo.r7.journal.api.JournalExchange;
+import com.ethlo.r7.journal.api.JournalIntegrityListener;
+import com.ethlo.r7.journal.api.JournalLevel;
+import com.ethlo.r7.journal.api.ReassemblyOptions;
+import com.ethlo.r7.r7f.ExchangeReassembler;
+import com.ethlo.r7.r7f.R7Tailer;
+import com.ethlo.r7.R7fTestFraming.EntryRef;
+import com.ethlo.r7.r7f.R7fConstants;
+import com.ethlo.r7.r7f.R7fJournal;
+import com.ethlo.r7.r7f.R7fJournalProvider;
+import com.ethlo.r7.r7f.R7fRecoveryManager;
+import com.ethlo.r7.util.FastGatewayAttributes;
+import com.ethlo.r7.util.MutableFastGatewayHeaders;
+
+/**
+ * What the reader does with a journal that is not intact.
+ * <p>
+ * The requirement is not that damaged data is recovered — it cannot be. It is that damage
+ * is survivable and <em>visible</em>: the reader keeps going, and every lost or skipped
+ * region is reported. A reader that quietly returns fewer records than were written is
+ * worse than one that fails loudly.
+ * <p>
+ * These tests encode the on-disk framing deliberately, so a change to the format has to
+ * be made here too rather than silently invalidating the corpus.
+ */
+class JournalIntegrityTest
+{
+    private static final int SEGMENT_SIZE = 256 * 1024;
+
+    /** Mirrors {@code R7Tailer.CHECKPOINT_FILE}, which is private to the tailer. */
+    private static final String CHECKPOINT_FILE = ".r7_checkpoints";
+
+    @TempDir
+    Path journalDir;
+
+    /**
+     * A flipped bit inside one entry costs that entry and the rest of its block, and nothing
+     * more: everything before it, and everything from the next block boundary on, still
+     * decodes, and the damage is reported.
+     * <p>
+     * The rest of the block goes because the reader resumes only at block boundaries, the one
+     * place it can trust to hold framing (FORMAT.md 6.1). The count is checked exactly, so a
+     * reader that lost more, or one that resumed inside the block, would both fail here.
+     */
+    @Test
+    void corruptEntryIsSkippedAndReported() throws IOException
+    {
+        writeExchanges(200);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        final long lost = entriesLostWithTheBlockOf(segment, entries, victim);
+
+        // Corrupt the payload, leaving the framing intact so the CRC is what catches it.
+        flipByte(segment, victim.payloadOffset() + 1);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.corruptRegions).as("damage must be reported").hasSize(1);
+        assertThat(sink.missingEntries).as("sink: %s", sink).isEqualTo(lost);
+        assertThat(sink.completed).as("entries before the damage").containsKey("req-0");
+        assertThat(sink.completed).as("entries after the next block boundary").containsKey("req-199");
+    }
+
+    /**
+     * An entry overwritten wholesale, rather than subtly corrupted, leaves a hole. The
+     * reader must resynchronise at the next block boundary and then notice, from the sequence
+     * numbers, that something is missing — the case that is invisible without them.
+     */
+    @Test
+    void holeInTheMiddleIsDetectedAsMissingEntries() throws IOException
+    {
+        writeExchanges(200);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        final long lost = entriesLostWithTheBlockOf(segment, entries, victim);
+
+        // 0xFF rather than 0x00: zeros mean "never written", which the next test covers.
+        final byte[] rubbish = new byte[victim.totalLength()];
+        java.util.Arrays.fill(rubbish, (byte) 0xFF);
+        overwrite(segment, victim.offset(), rubbish);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("the sequence numbers are what make this detectable; sink: %s", sink)
+                .isEqualTo(lost);
+        assertThat(sink.corruptRegions).hasSize(1);
+        assertThat(sink.completed).containsKey("req-199");
+    }
+
+    /**
+     * A segment cut mid-entry — the normal shape of an unclean stop — must not throw, and
+     * must not silently claim the truncated entry decoded.
+     */
+    @Test
+    void truncatedTailStopsCleanly() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef last = entries.get(entries.size() - 1);
+
+        // Cut halfway through the final entry.
+        try (var channel = java.nio.channels.FileChannel.open(segment, StandardOpenOption.WRITE))
+        {
+            channel.truncate(last.offset() + (last.totalLength() / 2));
+        }
+
+        final CollectingSink sink = tail();
+
+        // Whatever the reader reports, it must not have invented the truncated entry and
+        // must not have thrown.
+        assertThat(sink.completed.size()).isLessThanOrEqualTo(6);
+        assertThat(sink.sequenceRegressions).isEmpty();
+    }
+
+    /**
+     * A file that is not an r7f segment at all must be set aside, not deleted and not
+     * rescanned on every boot.
+     */
+    @Test
+    void foreignFileIsQuarantined() throws IOException
+    {
+        final Path bogus = journalDir.resolve("shard-0-1700000000000-1" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        final byte[] content = new byte[R7fConstants.PREAMBLE_SIZE + 64];
+        java.util.Arrays.fill(content, (byte) 'Z');
+        Files.write(bogus, content);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).hasSize(1);
+        assertThat(Files.exists(bogus)).as("the original must not be left in place").isFalse();
+        assertThat(quarantinedFiles()).hasSize(1);
+    }
+
+    /**
+     * A file shorter than the preamble used to throw inside recovery and be left behind
+     * to be rescanned forever.
+     */
+    @Test
+    void truncatedPreambleIsQuarantined() throws IOException
+    {
+        final Path stub = journalDir.resolve("shard-0-1700000000000-2" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        Files.write(stub, new byte[32]);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).hasSize(1);
+        assertThat(quarantinedFiles()).hasSize(1);
+    }
+
+    /**
+     * Body bytes that do not match the checksum the gateway recorded mean the stored
+     * record is not what crossed the wire. That must be reported, not quietly served.
+     */
+    @Test
+    void bodyChecksumMismatchIsReported() throws IOException
+    {
+        final String reqId = "req-checksum";
+        final byte[] body = "the original body".getBytes(StandardCharsets.ISO_8859_1);
+
+        // Deliberately record a checksum that does not describe the body being written,
+        // standing in for a body that was altered between the wire and the journal.
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId, ByteBuffer.wrap("GET / HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            journal.requestBody(reqId, ByteBuffer.wrap(body));
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED, false, false);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches).containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * The realistic power-loss hole: a page that never reached the device reads back as
+     * zeroes, because the segment was pre-allocated zero-filled.
+     * <p>
+     * This is the case that made the sequence numbers worth adding, and the case a reader
+     * that stops at the first zero byte cannot see — it looks exactly like the unwritten
+     * tail. A sealed segment declares where its data ends, so zeroes before that are a
+     * hole by definition and the reader must look past them.
+     */
+    @Test
+    void holeOfZeroesInSealedSegmentIsDetected() throws IOException
+    {
+        writeExchanges(200);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        final long lost = entriesLostWithTheBlockOf(segment, entries, victim);
+
+        overwrite(segment, victim.offset(), new byte[victim.totalLength()]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("zeroes in a sealed segment are a hole, not an end; sink: %s", sink)
+                .isEqualTo(lost);
+        assertThat(sink.completed)
+                .as("entries after the hole must still be read")
+                .containsKey("req-199");
+    }
+
+    /**
+     * A backward sequence means the file is not a valid append-only segment. Continuing
+     * would replay duplicate or out-of-order events into the reassembler and build
+     * exchanges that never happened, so FORMAT.md §6 requires the reader to stop.
+     */
+    @Test
+    void sequenceRegressionStopsDecoding() throws IOException
+    {
+        writeExchanges(9);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final int victimIndex = entries.size() / 2;
+        rewriteSequence(segment, entries.get(victimIndex), 1);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).isNotEmpty();
+        assertThat(sink.completed.size())
+                .as("decoding must stop at the regression, not carry on")
+                .isLessThan(9);
+    }
+
+    /**
+     * Only active files pass through recovery. A sealed or compressed file that is not a
+     * supported segment must not be decoded as whatever its bytes resemble and then
+     * deleted as processed.
+     */
+    @Test
+    void unsupportedVersionIsQuarantinedByTheTailer() throws IOException
+    {
+        final Path sealed = journalDir.resolve("shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION);
+        final ByteBuffer content = ByteBuffer.allocate(R7fConstants.PREAMBLE_SIZE + 64).order(ByteOrder.BIG_ENDIAN);
+        content.putInt(R7fConstants.PREAMBLE_OFF_MAGIC, R7fConstants.MAGIC);
+        content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
+        Files.write(sealed, content.array());
+
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
+        tailer.runTick();
+
+        assertThat(sink.quarantined).as("reported once, not on every tick. sink: %s", sink).hasSize(1);
+        assertThat(sink.completed).isEmpty();
+        assertThat(Files.readAllBytes(sealed)).as("left in place, byte for byte").isEqualTo(content.array());
+        assertThat(quarantinedFiles()).as("the journal directory is not the tailer's to rename in").isEmpty();
+    }
+
+    /**
+     * A tailer gets the journal directory read-only: it belongs to the gateway, and retention
+     * to the reaper. Quarantine used to be a rename, which failed there on every tick, so the
+     * unreadable segment was reported again and again and never set aside. The verdict is now
+     * kept in the tailer's own checkpoint file, so it needs no write access to the journal.
+     */
+    @Test
+    void quarantineNeedsNoWriteAccessToTheJournalDirectory(@TempDir final Path checkpointDir) throws IOException
+    {
+        Assumptions.assumeTrue(journalDir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+
+        final Path sealed = journalDir.resolve("shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION);
+        final ByteBuffer content = ByteBuffer.allocate(R7fConstants.PREAMBLE_SIZE + 64).order(ByteOrder.BIG_ENDIAN);
+        content.putInt(R7fConstants.PREAMBLE_OFF_MAGIC, R7fConstants.MAGIC);
+        content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
+        Files.write(sealed, content.array());
+
+        final Set<PosixFilePermission> original = Files.getPosixFilePermissions(journalDir);
+        Files.setPosixFilePermissions(journalDir, PosixFilePermissions.fromString("r-xr-xr-x"));
+        try
+        {
+            Assumptions.assumeFalse(Files.isWritable(journalDir), "running as a user that ignores directory permissions");
+
+            final CollectingSink sink = new CollectingSink();
+            final ReassemblyOptions options = ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1));
+            final R7Tailer tailer = new R7Tailer(journalDir, checkpointDir, sink, sink, options);
+            tailer.runTick();
+            tailer.runTick();
+            assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+
+            // The verdict survives a restart: a new process does not report it again.
+            final CollectingSink afterRestart = new CollectingSink();
+            new R7Tailer(journalDir, checkpointDir, afterRestart, afterRestart, options).runTick();
+            assertThat(afterRestart.quarantined).as("sink: %s", afterRestart).isEmpty();
+        }
+        finally
+        {
+            Files.setPosixFilePermissions(journalDir, original);
+        }
+        assertThat(Files.exists(sealed)).isTrue();
+    }
+
+    /**
+     * Quarantine is this tailer's verdict on a file, not a property of the file. A newer
+     * build that reads the format, or an operator replacing the file, must not need the
+     * checkpoint file edited before the segment is read; and a segment set aside must not hold
+     * up the segments after it in its shard, as the rename it replaces never did.
+     */
+    @Test
+    void aQuarantinedSegmentIsReadOnceItBecomesReadableAndNeverBlocksItsShard() throws IOException
+    {
+        writeExchanges(3);
+        final Path good = onlySealedSegment();
+        final byte[] goodBytes = Files.readAllBytes(good);
+
+        // Sequence 0 sorts ahead of the real segment in shard 0.
+        final Path unreadable = journalDir.resolve("shard-0-1700000000000-0-1-2" + R7fConstants.R7F_FILE_EXTENSION);
+        final ByteBuffer content = ByteBuffer.allocate(R7fConstants.PREAMBLE_SIZE + 64).order(ByteOrder.BIG_ENDIAN);
+        content.putInt(R7fConstants.PREAMBLE_OFF_MAGIC, R7fConstants.MAGIC);
+        content.putShort(R7fConstants.PREAMBLE_OFF_VERSION, (short) 99);
+        Files.write(unreadable, content.array());
+
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(sink.completed).as("the next segment in the shard is still read. sink: %s", sink).hasSize(3);
+
+        // The real segment moves under the quarantined segment's key: readable now.
+        Files.delete(good);
+        Files.write(unreadable, goodBytes);
+        final CollectingSink afterFix = new CollectingSink();
+        new R7Tailer(journalDir, afterFix, afterFix, ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(afterFix.quarantined).as("sink: %s", afterFix).isEmpty();
+        assertThat(afterFix.completed).as("read from the start once readable. sink: %s", afterFix).hasSize(3);
+    }
+
+    /**
+     * An active segment belongs to the writer. The warmer pre-allocates the next one with
+     * an all-zero header, and the writer stamps its preamble only when it claims it, so
+     * the tailer must leave an unrecognised active file alone rather than rename it out
+     * from under a live mapping.
+     */
+    @Test
+    void activeSegmentsAreNeverQuarantinedByTheTailer() throws IOException
+    {
+        final Path spare = journalDir.resolve("shard-0-1700000000000-1" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        Files.write(spare, new byte[R7fConstants.PREAMBLE_SIZE + 64]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).isEmpty();
+        assertThat(Files.exists(spare)).as("the writer's file must be left where it is").isTrue();
+        assertThat(quarantinedFiles()).isEmpty();
+    }
+
+    /**
+     * The tailer keys segments by shard and sequence, so the sequence has to keep
+     * increasing across a restart. A counter that began again at zero would give a new
+     * segment the same key as a retained one, and the tailer would silently read only one
+     * of the two.
+     */
+    @Test
+    void segmentSequencesDoNotCollideAcrossRestart() throws IOException
+    {
+        for (int run = 0; run < 3; run++)
+        {
+            try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+            {
+                final String reqId = "restart-" + run;
+                journal.clientRequest(JournalLevel.METADATA, reqId,
+                        ByteBuffer.wrap("GET / HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                        new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+                journal.endExchange(reqId, new FastGatewayAttributes(),
+                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
+            }
+        }
+
+        final List<String> keys = new ArrayList<>();
+        try (Stream<Path> files = Files.list(journalDir))
+        {
+            for (final Path p : files.toList())
+            {
+                final String[] parts = p.getFileName().toString().split("-");
+                if (parts.length >= 4 && parts[0].equals("shard"))
+                {
+                    keys.add(parts[1] + "-" + parts[3].split("\\.")[0]);
+                }
+            }
+        }
+
+        assertThat(keys).as("every segment needs its own shard+sequence key").isNotEmpty();
+        assertThat(new HashSet<>(keys))
+                .as("duplicate keys mean the tailer would drop a segment: %s", keys)
+                .hasSameSizeAs(keys);
+    }
+
+    /**
+     * A hole far larger than one page. The reader used to abandon the rest of the file
+     * after a megabyte of scanning, which contradicted FORMAT.md §6 and discarded entries
+     * whose framing and CRC were perfectly intact.
+     */
+    @Test
+    void largeHoleIsCrossedAndReported() throws IOException
+    {
+        writeExchanges(200);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef from = entries.get(entries.size() / 3);
+        final long available = Files.size(segment) - from.offset();
+        final int holeBytes = (int) Math.min(16 * 1024L, available / 2);
+
+        overwrite(segment, from.offset(), new byte[holeBytes]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries).as("sink: %s", sink).isGreaterThan(0);
+        assertThat(sink.completed).as("entries before the hole").containsKey("req-0");
+        assertThat(sink.completed).as("entries after the hole").containsKey("req-199");
+    }
+
+    /**
+     * If every body entry for an exchange is lost, there is nothing to compare against the
+     * checksum the gateway recorded — which is exactly when saying nothing is worst. The
+     * exchange would otherwise be emitted as complete with its body silently absent.
+     */
+    @Test
+    void absentBodyWithAJournaledChecksumIsReported() throws IOException
+    {
+        final String reqId = "req-no-body";
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId,
+                    ByteBuffer.wrap("POST /upload HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            // No requestBody entry at all, but the end event says a body was seen.
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, 4096L, 0L, 0L, 0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0x12345678), BodyChecksum.NOT_RECORDED, false, false);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches).as("sink: %s", sink).containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * A journaled checksum of zero must still be verified. CRC32C evaluates to zero for
+     * some non-empty inputs, so treating zero as "there was no body" would wave through
+     * exactly the exchanges whose bodies hash that way — including ones whose stored body
+     * was lost entirely, as here.
+     */
+    @Test
+    void zeroChecksumIsStillVerified() throws IOException
+    {
+        final String reqId = "req-zero-crc";
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId,
+                    ByteBuffer.wrap("POST /x HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            // A body was seen on the wire but none was journaled, and the recorded
+            // checksum happens to be zero.
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, 128L, 0L, 0L, 0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0), BodyChecksum.NOT_RECORDED, false, false);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches).as("sink: %s", sink).containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * A file that is not a segment is not the journal's business.
+     * <p>
+     * Compression is no longer a phase of a segment's life — it is one thing a consumer may
+     * do with a sealed segment — so a {@code .zst} sitting in the journal directory belongs
+     * to whoever put it there. The tailer must not read it, quarantine it or delete it, and
+     * `FORMAT.md` 3.1 says so. This test exists to fail if anything ever puts a non-segment
+     * extension back into the tailer's filter.
+     */
+    @Test
+    void aFileThatIsNotASegmentIsLeftAlone() throws IOException
+    {
+        // ".zst" spelled out, not a constant: the journal has no notion of a compressed
+        // extension any more, which is the point. This is simply a file some consumer left
+        // in the directory, and it could as easily be ".tar" or ".parquet".
+        final Path notASegment = journalDir.resolve(
+                "shard-0-1700000000000-1-1-2" + R7fConstants.R7F_FILE_EXTENSION + ".zst");
+        final byte[] contents = new byte[512];
+        java.util.Arrays.fill(contents, (byte) 'Q');
+        Files.write(notASegment, contents);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.quarantined).as("sink: %s", sink).isEmpty();
+        assertThat(sink.corruptRegions).isEmpty();
+        assertThat(Files.exists(notASegment)).as("someone else's file must be left exactly as it was").isTrue();
+        assertThat(quarantinedFiles()).isEmpty();
+    }
+
+    /**
+     * A segment whose preamble page was lost but whose later pages survived looks, from
+     * its first six bytes, exactly like a spare the writer never took. Deleting it on that
+     * evidence would destroy recoverable records under the very failure mode this format
+     * documents.
+     */
+    @Test
+    void segmentWithLostPreambleButSurvivingDataIsQuarantined() throws IOException
+    {
+        final Path active = journalDir.resolve("shard-0-1700000000000-1" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        final byte[] content = new byte[R7fConstants.PREAMBLE_SIZE + 512];
+        // Preamble lost to zeroes, data after it intact.
+        java.util.Arrays.fill(content, R7fConstants.PREAMBLE_SIZE, content.length, (byte) 'D');
+        Files.write(active, content);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(quarantinedFiles()).hasSize(1);
+    }
+
+    /**
+     * The companion case: a genuinely untouched pre-allocation is deleted quietly, because
+     * every unclean stop leaves one and reporting it would train operators to ignore the
+     * integrity signal.
+     */
+    @Test
+    void entirelyEmptyPreAllocationIsDeletedQuietly() throws IOException
+    {
+        final Path spare = journalDir.resolve("shard-0-1700000000000-2" + R7fConstants.ACTIVE_FILE_EXTENSION);
+        Files.write(spare, new byte[R7fConstants.PREAMBLE_SIZE + 512]);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).as("sink: %s", sink).isEmpty();
+        assertThat(Files.exists(spare)).isFalse();
+        assertThat(quarantinedFiles()).isEmpty();
+    }
+
+    /**
+     * {@code 0xFFFFFFFF} is an ordinary CRC32C, not a sentinel.
+     * <p>
+     * While checksums travelled as {@code int}, that value <em>was</em> {@code -1}, so a
+     * body hashing to all ones had its verification skipped by the mechanism that exists to
+     * guarantee it — about one body in four billion, silently, and only ever on the bodies
+     * unlucky enough to hash that way. Carrying them as {@code long} is what puts the
+     * sentinel outside the value domain.
+     */
+    @Test
+    void aChecksumOfAllOnesIsNotMistakenForAnAbsentOne() throws IOException
+    {
+        final String reqId = "req-all-ones";
+        final byte[] body = "not the body that hashes to all ones".getBytes(StandardCharsets.ISO_8859_1);
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId,
+                    ByteBuffer.wrap("POST /x HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            journal.requestBody(reqId, ByteBuffer.wrap(body));
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0xFFFFFFFFL), BodyChecksum.NOT_RECORDED, false, false);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches)
+                .as("a recorded checksum of 0xFFFFFFFF must be verified like any other")
+                .containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * Entries lost from the <em>start</em> of a segment must be reported.
+     * <p>
+     * Sequences restart at 1 in every segment, so a reader opening a segment it has never
+     * seen knows exactly what the first entry must be. Starting with no expectation instead
+     * — adopting whichever sequence turns up first — makes a segment that lost its opening
+     * entries read back as a shorter but perfectly consistent one. That is the only point
+     * in the file where the loss is detectable at all, since there is no earlier entry to
+     * compare against.
+     */
+    @Test
+    void entriesLostAtTheStartOfASegmentAreReported() throws IOException
+    {
+        writeExchanges(1);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        assertThat(entries).hasSizeGreaterThan(1);
+        assertThat(entries.get(0).sequence()).isEqualTo(R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        // The segment now opens at #5: entries 1 through 4 were written and never reached
+        // the device. The framing and CRC stay valid, so the sequence is the only evidence
+        // and the reader's expectation is the only thing it can be checked against.
+        rewriteSequence(segment, entries.get(0), 5);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("a fresh segment must expect #%d, so opening at #5 is four entries lost. sink: %s",
+                        R7fConstants.FIRST_ENTRY_SEQUENCE, sink)
+                .isEqualTo(4L);
+
+        // The entries after it still carry their original numbering, which now steps
+        // backwards. That is reported and decoding stops, per FORMAT.md 6 - incidental
+        // here, but asserted so the test fails loudly if that behaviour changes.
+        assertThat(sink.sequenceRegressions).hasSize(1);
+    }
+
+    /**
+     * The reader must not consume an active segment's pre-allocated tail when it finds an
+     * entry it cannot parse.
+     * <p>
+     * The writer stamps the magic first and the CRC last, so an entry caught mid-publish is
+     * byte-for-byte a corrupt entry: header present, payload short, checksum wrong. The
+     * resync scan then finds nothing after it, because everything past the write frontier
+     * is still zero. Treating that as "no further entries, stop" and jumping to the end of
+     * the buffer checkpoints the whole pre-allocation — and every entry appended afterwards
+     * is skipped, silently, for the life of the segment.
+     * <p>
+     * This is not a rare corruption path. It is what tailing a live writer looks like
+     * whenever a tick lands between the magic and the checksum.
+     */
+    @Test
+    void partialTrailingEntryInAnActiveSegmentIsRetriedNotConsumed() throws IOException
+    {
+        writeExchanges(6);
+        final Path sealed = onlySealedSegment();
+        final byte[] complete = Files.readAllBytes(sealed);
+        final List<EntryRef> entries = entriesOf(sealed);
+        final EntryRef last = entries.get(entries.size() - 1);
+
+        // Rebuild it as the writer would have had it a moment earlier: an active segment is
+        // the full pre-allocation, and the final entry is fully assembled but not yet
+        // published — its magic slot is still zero, because the writer stamps the magic last.
+        // And not yet sealed: a live segment has no seal record, and one that has is read as
+        // sealed whatever its name.
+        final byte[] active = new byte[SEGMENT_SIZE];
+        System.arraycopy(complete, 0, active, 0, complete.length);
+        java.util.Arrays.fill(active, last.offset(), last.offset() + Integer.BYTES, (byte) 0);
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC + Integer.BYTES, (byte) 0);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        // One tailer across both ticks: the reassembler holds the half-seen exchange, which
+        // is exactly how this runs in production.
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+        assertThat(sink.completed)
+                .as("the exchange whose final entry is still being written cannot be complete yet")
+                .hasSize(5);
+
+        // The writer publishes it: the magic goes in last, and the entry becomes visible.
+        System.arraycopy(complete, last.offset(), active, last.offset(), Integer.BYTES);
+        Files.write(activePath, active);
+
+        tailer.runTick();
+        assertThat(sink.completed)
+                .as("the entry that was mid-write on the first tick must be picked up on the second")
+                .hasSize(6);
+        assertThat(sink.missingEntries).as("nothing was lost, so nothing may be reported missing").isZero();
+        assertThat(sink.sequenceRegressions).isEmpty();
+    }
+
+    /**
+     * Invariant 3 says (shard, sequence) is unique and increasing <em>for ever</em>. Seeding
+     * the counter from the segments on disk only delivers that while at least one segment is
+     * retained: retention deletes them once they have been read, and a shard drained to
+     * empty would otherwise start over at one. The tailer keys its checkpoints by that pair,
+     * so a reused sequence can have a brand-new segment resumed at a dead one's offset — and,
+     * if that offset is past its data, deleted unread.
+     */
+    @Test
+    void segmentSequenceDoesNotRestartAfterEverySegmentIsDeleted() throws IOException
+    {
+        writeExchanges(2);
+        final long firstSequence = sequenceOfOnlySegment();
+
+        // Retention, having read everything, removes every segment for this shard.
+        for (final Path segment : filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+        {
+            Files.delete(segment);
+        }
+
+        // Spelled out, because it is the entire premise. If any file named shard-0-… is
+        // still here — a sealed segment, or a pre-allocated spare a provider failed to
+        // release — then highestExistingSequence can seed the counter from its name and this
+        // test passes whether or not the marker works at all. The marker exists for exactly
+        // one situation: a shard drained to nothing.
+        try (Stream<Path> remaining = Files.list(journalDir))
+        {
+            assertThat(remaining.map(p -> p.getFileName().toString())
+                    .filter(n -> n.startsWith("shard-0-"))
+                    .toList())
+                    .as("nothing may remain for the counter to be seeded from")
+                    .isEmpty();
+        }
+        assertThat(journalDir.resolve("shard-0.seq"))
+                .as("and the marker, which is the only thing left that knows the answer")
+                .exists();
+
+        writeExchanges(2);
+
+        assertThat(sequenceOfOnlySegment())
+                .as("a restart that finds no segments must still not reuse a sequence number")
+                .isGreaterThan(firstSequence);
+    }
+
+    /**
+     * The other half of the same problem: pruning a checkpoint when its segment is deleted
+     * does nothing if emptying the map skips the save entirely and leaves the previous file
+     * in place. A restart then loads checkpoints for segments that no longer exist.
+     * <p>
+     * The tailer never deletes a segment itself any more - that is a dedicated reaper's job
+     * - so this simulates the reaper removing a fully-read segment by hand, the same way it
+     * would on disk, and checks the tailer's next tick still notices and drops the stale
+     * checkpoint.
+     */
+    @Test
+    void checkpointFileIsRemovedOnceEverySegmentHasBeenReadAndDeleted() throws IOException
+    {
+        writeExchanges(3);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.completed).hasSize(3);
+        assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
+                .as("a fully read segment still keeps its checkpoint - this tailer never deletes it")
+                .isTrue();
+
+        for (final Path segment : filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+        {
+            Files.delete(segment);
+        }
+
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
+                .as("once the reaper's deletion is visible on disk, no segments left means no checkpoints to keep")
+                .isFalse();
+    }
+
+    /**
+     * A recorded checksum must be verified even when the rest of the record is damaged.
+     * <p>
+     * Verification used to also require the start event's journal level and a positive
+     * body-byte count, both of which live in <em>other</em> entries. That made a sufficient
+     * condition into a conjunction that fails open: lose the client-request entry, or record
+     * the wrong byte count, and the check is skipped on exactly the exchange whose record is
+     * already in doubt. Here the request body was journaled and its checksum recorded, but
+     * there is no client-request entry and the traffic counter says zero.
+     */
+    @Test
+    void aRecordedChecksumIsVerifiedEvenWithoutTheStartEvent() throws IOException
+    {
+        final String reqId = "req-no-start";
+        final byte[] body = "the stored body".getBytes(StandardCharsets.ISO_8859_1);
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            // A client response, so the exchange exists, but no client request: its journal
+            // level is never learned.
+            journal.clientResponse(JournalLevel.FULL, reqId, 200,
+                    ByteBuffer.wrap("HTTP/1.1 200 OK".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), null);
+            journal.requestBody(reqId, ByteBuffer.wrap(body));
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200,
+                    // Zero request-body bytes, contradicting the body that was just written.
+                    0L, 0L, 0L, 0L,
+                    0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0x0BADC0DEL), BodyChecksum.NOT_RECORDED, false, false);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.checksumMismatches)
+                .as("neither a missing start event nor a zero byte count may excuse a recorded checksum. sink: %s", sink)
+                .containsExactly(reqId + ":REQUEST");
+    }
+
+    /**
+     * A sealed segment ending in fewer bytes than an entry header must be reported and
+     * consumed.
+     * <p>
+     * The decode loop only runs while at least {@code MIN_ENTRY_SIZE} bytes remain, so a
+     * shorter suffix is examined by nothing at all. Left behind, it is the same trap as
+     * every other early exit: the tailer sees bytes remaining, never finishes the segment,
+     * and checkpoints the identical offset on every tick for ever, silently.
+     */
+    @Test
+    void sealedSegmentEndingMidHeaderIsReportedAndConsumed() throws IOException
+    {
+        writeExchanges(5);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef last = entries.get(entries.size() - 1);
+
+        // Four bytes into the final entry: enough for the magic, far short of a header.
+        try (var channel = java.nio.channels.FileChannel.open(segment, StandardOpenOption.WRITE))
+        {
+            channel.truncate(last.offset() + 4L);
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.corruptRegions)
+                .as("the unexaminable suffix must be reported, not ignored. sink: %s", sink)
+                .isNotEmpty();
+
+        // Second tick: the segment was consumed, so there is nothing left to re-report.
+        final CollectingSink second = tail();
+        assertThat(second.corruptRegions)
+                .as("a consumed segment must not be read again on the next tick")
+                .isEmpty();
+    }
+
+    /**
+     * Recovery may only delete a segment it can prove was never used.
+     * <p>
+     * A stamped segment whose bytes cannot be read as entries is the worst case to get
+     * wrong: the scan finds no records, so the file looks exactly like an untouched
+     * pre-allocation, while those bytes are the only surviving evidence of what was
+     * written. Deleting makes lost audit data indistinguishable from a spare.
+     */
+    @Test
+    void stampedSegmentWithUnreadableDataIsQuarantinedNotDeleted() throws IOException
+    {
+        writeExchanges(1);
+        final Path sealed = onlySealedSegment();
+        final byte[] sealedBytes = Files.readAllBytes(sealed);
+
+        // A real preamble, so the file is unmistakably a stamped segment, followed by bytes
+        // that carry no magic anywhere.
+        final byte[] damaged = new byte[SEGMENT_SIZE];
+        System.arraycopy(sealedBytes, 0, damaged, 0, R7fConstants.PREAMBLE_SIZE);
+        java.util.Arrays.fill(damaged, R7fConstants.PREAMBLE_SIZE, R7fConstants.PREAMBLE_SIZE + 512, (byte) 0xFF);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, damaged);
+
+        final CollectingSink sink = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, sink);
+
+        assertThat(sink.quarantined).as("sink: %s", sink).hasSize(1);
+        assertThat(quarantinedFiles()).hasSize(1);
+        assertThat(Files.exists(activePath)).as("the evidence must not be deleted").isFalse();
+    }
+
+    /**
+     * A hole at the very start of a sealed segment's data must be crossed like any other.
+     * <p>
+     * This is the first thing the decoder examines on a fresh read, and for a long time it
+     * was the one position where the resync scan could not work: the caller maps the file
+     * little-endian for FlatBuffers, and only {@code parseEntry} set big-endian for the
+     * framing — so on iteration one the scan compared the magic byte-reversed, matched
+     * nothing, and concluded the segment ended at offset 1024. The tailer then consumed it,
+     * marked it fully read and deleted it, with every surviving entry unread and no loss
+     * reported. A hole anywhere later happened to work, because a successful parse had set
+     * the order on the way past.
+     */
+    @Test
+    void holeAtTheStartOfASealedSegmentIsCrossed() throws IOException
+    {
+        // Enough to fill several blocks. After a hole the reader resumes at the next block
+        // boundary, so the survivors it has to reach must lie beyond the damaged block.
+        writeExchanges(200);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef first = entries.get(0);
+        final EntryRef second = entries.get(1);
+
+        // Zeroes, not rubbish: a page that never reached the device reads back as zero, and
+        // that is the branch this exercises.
+        overwrite(segment, first.offset(), new byte[first.totalLength() + second.totalLength()]);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("the entries after the hole prove the loss through their sequence. sink: %s", sink)
+                .isGreaterThan(0L);
+        assertThat(sink.completed.size() + sink.orphanedEnds.size() + sink.incompleteEnds.size())
+                .as("the reader must reach the entries after the hole, not stop at it")
+                .isGreaterThan(0);
+        assertThat(sink.corruptRegions).isNotEmpty();
+    }
+
+    /**
+     * A sequence regression in a sealed segment abandons the rest of the file. That is the
+     * right call — the segment is not a valid append-only log any more — but it must be
+     * accounted for.
+     * <p>
+     * The branch used to consume to the end of the buffer without counting anything, so
+     * {@code DecodeStats.isClean()} said the read was clean, the tailer saw a drained buffer,
+     * marked the segment fully read and deleted it. Entries it had deliberately declined to
+     * read were destroyed on the strength of having declined to read them.
+     */
+    @Test
+    void sequenceRegressionInASealedSegmentIsAccountedFor() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        assertThat(victim.sequence()).isGreaterThan(R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        // Framing and CRC stay valid; only the sequence steps backwards.
+        rewriteSequence(segment, victim, R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
+        assertThat(sink.corruptRegions)
+                .as("the abandoned remainder must be reported, not silently dropped")
+                .isNotEmpty();
+    }
+
+    /**
+     * Recovery must treat an unpublished entry as the end of the data, not as damage.
+     * <p>
+     * Because the writer stamps the magic last, a process killed mid-entry leaves the entry
+     * fully assembled with a zero magic slot. That is indistinguishable from "nothing was
+     * ever written here", which is the point: recovery seals at that offset, reports
+     * nothing wrong, and every published entry before it survives. With the magic written
+     * first, the same crash left a recognisable-but-broken entry, and recovery had to guess.
+     */
+    @Test
+    void recoverySealsAtAnUnpublishedEntryWithoutReportingDamage() throws IOException
+    {
+        writeExchanges(4);
+        final Path sealed = onlySealedSegment();
+        final byte[] complete = Files.readAllBytes(sealed);
+        final List<EntryRef> entries = entriesOf(sealed);
+        final EntryRef last = entries.get(entries.size() - 1);
+
+        // The segment as the writer would have left it: everything in place, the final
+        // entry's magic not yet stamped.
+        final byte[] active = new byte[SEGMENT_SIZE];
+        System.arraycopy(complete, 0, active, 0, complete.length);
+        java.util.Arrays.fill(active, last.offset(), last.offset() + Integer.BYTES, (byte) 0);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        final CollectingSink recovery = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, recovery);
+
+        assertThat(recovery.corruptRegions)
+                .as("an unpublished entry is not damage. sink: %s", recovery)
+                .isEmpty();
+        assertThat(recovery.quarantined).isEmpty();
+
+        final Path resealed = onlySealedSegment();
+        final ByteBuffer header = ByteBuffer.wrap(Files.readAllBytes(resealed)).order(ByteOrder.BIG_ENDIAN);
+        assertThat(header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END))
+                .as("the segment's data must end exactly where the unpublished entry began")
+                .isEqualTo(last.offset());
+        assertThat(Files.size(resealed))
+                .as("and the pre-allocated tail must be left alone rather than truncated away")
+                .isGreaterThan(last.offset());
+
+        final CollectingSink sink = tail();
+        assertThat(sink.missingEntries)
+                .as("nothing was lost, so nothing may be reported missing. sink: %s", sink)
+                .isZero();
+        assertThat(sink.corruptRegions).isEmpty();
+    }
+
+    /**
+     * Entries lost from the end of a sealed segment must be reported.
+     * <p>
+     * Nothing else can catch this. A truncated tail leaves no gap and no damaged entry — the
+     * segment reads back as a shorter, wholly self-consistent one, and the sequence check has
+     * nothing to compare the end against. The seal record is what closes it: the writer notes
+     * the last sequence it wrote, and the reader compares its own.
+     */
+    @Test
+    void entriesLostFromTheEndOfASealedSegmentAreReported() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef cutAt = entries.get(entries.size() - 3);
+
+        // The last three entries never reached the device.
+        try (var channel = java.nio.channels.FileChannel.open(segment, StandardOpenOption.WRITE))
+        {
+            channel.truncate(cutAt.offset());
+        }
+
+        final CollectingSink sink = tail();
+
+        assertThat(sink.missingEntries)
+                .as("the seal record is the only thing that can see a lost tail. sink: %s", sink)
+                .isEqualTo(3L);
+    }
+
+    /**
+     * A sealed segment records what it holds, and a healthy writer's count and last sequence
+     * agree. Recovery is the documented exception, so this checks the writer's own path.
+     */
+    @Test
+    void sealingRecordsWhatTheSegmentHolds() throws IOException
+    {
+        writeExchanges(4);
+        final Path segment = onlySealedSegment();
+
+        final ByteBuffer header = ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN);
+        final List<EntryRef> entries = entriesOf(segment);
+
+        assertThat(header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_MAGIC))
+                .as("a sealed segment must say so in its bytes, not only in its name")
+                .isEqualTo(R7fConstants.SEAL_MAGIC);
+        assertThat(header.getLong(R7fConstants.PREAMBLE_OFF_ENTRY_COUNT)).isEqualTo(entries.size());
+        assertThat(header.getInt(R7fConstants.PREAMBLE_OFF_LAST_SEQUENCE))
+                .isEqualTo(entries.get(entries.size() - 1).sequence());
+    }
+
+    /**
+     * An active segment carries no seal record. Reading one would mean trusting zeroes as an
+     * entry count.
+     */
+    @Test
+    void anActiveSegmentCarriesNoSealRecord() throws IOException
+    {
+        writeExchanges(2);
+        final Path sealed = onlySealedSegment();
+        final byte[] bytes = Files.readAllBytes(sealed);
+
+        final byte[] active = new byte[SEGMENT_SIZE];
+        System.arraycopy(bytes, 0, active, 0, bytes.length);
+        // Undo the seal: this is what the file looked like before rotation stamped it.
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC,
+                R7fConstants.PREAMBLE_OFF_LAST_SEQUENCE + Integer.BYTES, (byte) 0);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        final CollectingSink sink = tail();
+
+        // An active segment is never "finished", so the seal record is never consulted and
+        // its absence is not a complaint.
+        assertThat(sink.corruptRegions).as("sink: %s", sink).isEmpty();
+        assertThat(sink.missingEntries).isZero();
+    }
+
+    /**
+     * A segment the reader gave up on must never be replayed, and (regardless of retention,
+     * which this tailer no longer performs at all) must never be reported as fully read.
+     * <p>
+     * A sequence regression is the one case where the reader stops on bytes it could still
+     * have decoded — the segment is no longer a valid append-only log, so it refuses to
+     * replay the rest rather than emit records that may never have happened. Those entries
+     * are still there and still readable, so deleting the file is the only thing that would
+     * actually destroy them.
+     */
+    @Test
+    void aSegmentWithUndeliveredEntriesIsKept() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
+        assertThat(Files.exists(segment))
+                .as("entries the reader declined to deliver are still readable — deleting is what loses them")
+                .isTrue();
+
+        // And it is not read again: a second tick must not replay what it did deliver.
+        final CollectingSink second = new CollectingSink();
+        new R7Tailer(journalDir, second, second,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(second.completed).as("a kept segment must not be re-read. sink: %s", second).isEmpty();
+        assertThat(Files.exists(segment)).isTrue();
+    }
+
+    /**
+     * Each tailer's own progress can live outside the shared journal directory, which is
+     * what lets a second, independently checkpointed tailer follow the same journal
+     * directory without the two overwriting each other's {@code .r7_checkpoints}.
+     */
+    @Test
+    void checkpointsCanLiveInADedicatedDirectory(@TempDir final Path checkpointDir) throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        rewriteSequence(segment, entries.get(entries.size() / 2), R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, checkpointDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.sequenceRegressions).as("sink: %s", sink).hasSize(1);
+        assertThat(Files.exists(checkpointDir.resolve(CHECKPOINT_FILE)))
+                .as("progress is persisted in the dedicated checkpoint directory")
+                .isTrue();
+        assertThat(Files.exists(journalDir.resolve(CHECKPOINT_FILE)))
+                .as("and never in the shared journal directory, so it cannot collide with another tailer's own checkpoint file")
+                .isFalse();
+    }
+
+    /**
+     * Every observability tailer is meant to have the journal directory mounted read-only
+     * (see docs/journaling.md) — the tailer itself never deletes a segment (a dedicated
+     * reaper does), but it still needs to actually read a directory it has no write access
+     * to, and do so without failing the tick or losing the checkpoint.
+     */
+    @Test
+    void aReadOnlyJournalDirectoryIsStillFullyReadable(@TempDir final Path checkpointDir) throws IOException
+    {
+        Assumptions.assumeFalse("root".equals(System.getProperty("user.name")),
+                "root bypasses file permissions, so a read-only directory cannot be observed as such");
+
+        writeExchanges(3);
+
+        final Set<PosixFilePermission> writable = Files.getPosixFilePermissions(journalDir);
+        Files.setPosixFilePermissions(journalDir, PosixFilePermissions.fromString("r-xr-xr-x"));
+        try
+        {
+            final CollectingSink sink = new CollectingSink();
+            new R7Tailer(journalDir, checkpointDir, sink, sink,
+                    ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+            assertThat(sink.completed).as("a read-only directory can still be read from").hasSize(3);
+            assertThat(filesEndingWith(R7fConstants.R7F_FILE_EXTENSION))
+                    .as("this tailer never attempts to delete a segment, whatever its mount permissions")
+                    .hasSize(1);
+        }
+        finally
+        {
+            Files.setPosixFilePermissions(journalDir, writable);
+        }
+    }
+
+    /**
+     * A segment that merely lost bytes is reported as damaged, and (like every other
+     * segment) is never deleted by the tailer itself - only quarantined if its identity or
+     * preamble is unreadable, which a corrupt-but-parseable region in the middle is not.
+     * <p>
+     * The counterpart to the test above, and the reason the two are separated: a hole is
+     * unreadable to anyone, so keeping the file preserves forensics and nothing else. Only
+     * abandonment holds data that deleting would destroy.
+     */
+    @Test
+    void aSegmentWithDamageIsReportedAndKept() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        final byte[] rubbish = new byte[victim.totalLength()];
+        java.util.Arrays.fill(rubbish, (byte) 0xFF);
+        overwrite(segment, victim.offset(), rubbish);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.corruptRegions).as("sink: %s", sink).isNotEmpty();
+        assertThat(sink.sequenceRegressions).as("damage, not abandonment").isEmpty();
+        assertThat(Files.exists(segment))
+                .as("the tailer itself never deletes a segment - a lossy read is reported, not destroyed")
+                .isTrue();
+    }
+
+    /**
+     * A consumer that refuses an entry must not lose it.
+     * <p>
+     * Skipping the entry looks like tolerance and is destruction: the tailer checkpoints
+     * past a record nobody received, marking the segment fully read - and a fully read
+     * segment reported to a reaper as reap-eligible is one it would delete. A sink that
+     * was unavailable for one tick would cost an exchange, permanently, with nothing left
+     * to recover it from.
+     * <p>
+     * So the reader stops on the refused entry and offers it again. Everything after it in
+     * that segment waits — head-of-line blocking on purpose, because an audit log may stall
+     * loudly but may not skip quietly.
+     */
+    @Test
+    void anEntryTheConsumerRefusesIsOfferedAgainRatherThanSkipped() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+
+        final RefusingSink sink = new RefusingSink("req-2");
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+
+        assertThat(sink.delivered)
+                .as("delivery stops at the refused entry. sink: %s", sink)
+                .containsExactly("req-0", "req-1");
+        assertThat(sink.stalls).as("and the stall is reported. sink: %s", sink).hasSize(1);
+        assertThat(sink.corruptRegions)
+                .as("a consumer failure is not damage to the journal. sink: %s", sink)
+                .isEmpty();
+        assertThat(Files.exists(segment))
+                .as("a segment holding an undelivered entry must survive")
+                .isTrue();
+
+        // The sink recovers, as a sink that was briefly unavailable does.
+        sink.acceptEverything();
+        tailer.runTick();
+
+        assertThat(sink.delivered)
+                .as("the refused entry is delivered once, and the rest follow. sink: %s", sink)
+                .containsExactly("req-0", "req-1", "req-2", "req-3", "req-4", "req-5");
+        assertThat(sink.orphanedEnds)
+                .as("the exchange state gathered before the refusal must survive it. sink: %s", sink)
+                .isEmpty();
+        assertThat(Files.exists(segment))
+                .as("the tailer itself never deletes a segment - only a dedicated reaper does, once "
+                        + "delivery is complete")
+                .isTrue();
+    }
+
+    /**
+     * Body events must advance the amortised sweep like any other event.
+     * <p>
+     * Every other event type reaches the exchange through {@code getOrCreate}, which ticks
+     * the sweep counter; body events go straight to the map and did not. So
+     * {@code sweepIntervalEvents} was counting non-body events only, and a stream of large
+     * uploads — where bodies outnumber everything else by an order of magnitude — swept that
+     * much less often than its configuration said. The age limit then means something other
+     * than what the operator set, and abandoned exchanges are held and reported late.
+     */
+    @Test
+    void bodyEventsAdvanceTheAmortisedSweep()
+    {
+        final CollectingSink sink = new CollectingSink();
+        final ExchangeReassembler reassembler = new ExchangeReassembler(sink,
+                ReassemblyOptions.DEFAULTS
+                        // Everything already in flight is over the age limit by the time the
+                        // next event arrives, so the only question this test asks is whether
+                        // the sweep runs at all.
+                        .withMaxAge(Duration.ofNanos(1))
+                        .withSweepIntervalEvents(3));
+
+        // Event one: the start, which ticks the counter through getOrCreate.
+        reassembler.onClientRequest("req-bodies-only", JournalLevel.FULL, "POST /upload HTTP/1.1",
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        assertThat(sink.abandoned).as("nothing swept yet. sink: %s", sink).isEmpty();
+
+        // Events two and three are bodies, and nothing else happens. The third must trip the
+        // interval; before the fix it counted for nothing and the sweep never ran.
+        reassembler.onRequestBody("req-bodies-only", ByteBuffer.wrap(new byte[]{'a'}));
+        reassembler.onRequestBody("req-bodies-only", ByteBuffer.wrap(new byte[]{'b'}));
+
+        assertThat(sink.abandoned)
+                .as("the sweep must be driven by body events too. sink: %s", sink)
+                .containsExactly("req-bodies-only:TIMED_OUT");
+    }
+
+    /**
+     * An exchange held for redelivery must outlive the age sweep.
+     * <p>
+     * A stall is unbounded by design — it lasts as long as the consumer refuses — but the
+     * state the retry depends on was put back into the in-flight map, where {@code maxAge}
+     * is five minutes. So an outage longer than the age limit evicted the assembled
+     * exchange, and the next attempt found nothing to attach the end event to: an orphaned
+     * end, a checkpointed segment, and a deleted file. The stall converted a permanent loss
+     * into a delayed one and called it a guarantee.
+     */
+    @Test
+    void anExchangeAwaitingRedeliverySurvivesTheSweep()
+    {
+        final byte[] body = "a body that must survive the outage".getBytes(StandardCharsets.ISO_8859_1);
+
+        final RefusingSink sink = new RefusingSink("req-held");
+        final ExchangeReassembler reassembler = new ExchangeReassembler(sink,
+                ReassemblyOptions.DEFAULTS
+                        // Everything in flight is over the age limit the moment it is created,
+                        // so any sweep that can see this exchange will take it.
+                        .withMaxAge(Duration.ofNanos(1))
+                        .withSweepIntervalEvents(10_000));
+
+        reassembler.onClientRequest("req-held", JournalLevel.FULL, "POST /held HTTP/1.1",
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        reassembler.onRequestBody("req-held", ByteBuffer.wrap(body));
+
+        assertThatThrownBy(() -> reassembler.onEnd("req-held", new FastGatewayAttributes(),
+                1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false))
+                .as("the consumer refuses, which is what stalls the segment")
+                .isInstanceOf(IllegalStateException.class);
+
+        // The outage outlasts maxAge. R7Tailer runs this at the end of every tick.
+        reassembler.sweep();
+
+        assertThat(sink.abandoned)
+                .as("a record waiting on a consumer is not an exchange whose end never came. "
+                        + "sink: %s", sink)
+                .isEmpty();
+
+        sink.acceptEverything();
+        reassembler.onEnd("req-held", new FastGatewayAttributes(),
+                1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
+
+        assertThat(sink.orphanedEnds).as("sink: %s", sink).isEmpty();
+        assertThat(sink.delivered).containsExactly("req-held");
+        assertThat(CollectingSink.concat(sink.lastExchange.getRequestBodyFragments()))
+                .as("with everything assembled before the refusal")
+                .isEqualTo(body);
+    }
+
+    /**
+     * A segment whose name carries no shard and sequence has no place in the stream, and is
+     * set aside rather than replayed at a guess.
+     * <p>
+     * The reassembler joins an exchange whose start is in one segment to its end in the next,
+     * so order is correctness, not presentation. Unparsable names were all given the same
+     * {@code (-1, -1)}, which sorted them equal to each other and ahead of every real shard —
+     * leaving the actual order to whatever {@code Files.list} returned, which is unspecified.
+     * Quarantine leaves the bytes where they are and says why; a rename puts the file back in
+     * the stream.
+     */
+    @Test
+    void aSegmentWithAnUnreadableNameIsSetAsideRatherThanReplayedOutOfOrder() throws IOException
+    {
+        writeExchanges(4);
+        final Path sealed = onlySealedSegment();
+
+        // Perfectly good contents under a name nobody can place — an operator restoring a
+        // backup is the realistic way this happens.
+        final Path restored = journalDir.resolve("restored-backup" + R7fConstants.R7F_FILE_EXTENSION);
+        Files.move(sealed, restored);
+
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+        tailer.runTick();
+        tailer.runTick();
+
+        assertThat(sink.quarantined).as("reported once, not on every tick. sink: %s", sink).hasSize(1);
+        assertThat(sink.completed)
+                .as("its records must not be replayed at an arbitrary position. sink: %s", sink)
+                .isEmpty();
+        assertThat(Files.exists(restored)).as("the bytes are kept where they are").isTrue();
+        assertThat(quarantinedFiles()).isEmpty();
+    }
+
+    /**
+     * A journal that cannot create segments must fail its caller, not wait for ever.
+     * <p>
+     * The warmer logged each failure and retried, while {@code getNextSegment()} sat on an
+     * empty pool — so a permanent cause (a full disk, a read-only mount, a sequence marker
+     * that cannot be made durable) produced no error, no rejected request and no exit code.
+     * Just a gateway that stopped serving, and a log line repeating the reason to nobody.
+     * For something that may not serve what it cannot journal, a refusal carrying the real
+     * cause is the only acceptable outcome.
+     * <p>
+     * The timeout is the assertion. A hang is the defect.
+     */
+    @Test
+    void aJournalThatCannotCreateSegmentsFailsRatherThanHangs() throws IOException
+    {
+        // A regular file where a directory belongs: every attempt to create a segment inside
+        // it fails, identically, for ever.
+        final Path notADirectory = journalDir.resolve("this-is-a-file");
+        Files.writeString(notADirectory, "not a directory");
+
+        assertTimeoutPreemptively(Duration.ofSeconds(30), () ->
+        {
+            try (R7fJournalProvider provider = new R7fJournalProvider(notADirectory, 0, SEGMENT_SIZE, false))
+            {
+                assertThatThrownBy(provider::getNextSegment)
+                        .as("the caller must be told, and told why")
+                        .isInstanceOf(UncheckedIOException.class)
+                        .hasMessageContaining("warming it has failed permanently")
+                        .hasCauseInstanceOf(IOException.class);
+            }
+        });
+    }
+
+    /**
+     * A sealed segment that lost its tail must be reported, not silently treated as clean.
+     * <p>
+     * The tailer used to treat "the file is no longer than where I stopped reading" as "I
+     * read all of it", which used to feed straight into deletion under eager retention. The
+     * two are the same statement only while nothing shrinks a file — and a sealed segment
+     * losing its tail is precisely the loss the seal record was added to expose, because
+     * nothing inside the file can show it. Deletion is no longer the tailer's call at all,
+     * but the shortcut this test guards against would still destroy the evidence by
+     * reporting a lossy read as a clean one, which is just as fatal to a reaper deciding
+     * whether the segment is safe to remove.
+     */
+    @Test
+    void aSealedSegmentThatLostItsTailIsReportedNotSilentlyAcceptedAsClean() throws IOException
+    {
+        writeExchanges(6);
+        final Path segment = onlySealedSegment();
+        final List<EntryRef> entries = entriesOf(segment);
+        final EntryRef cut = entries.get(entries.size() / 2);
+
+        // The segment loses everything from the middle on, after it was sealed. Its seal
+        // record still declares a Data End far beyond what is left.
+        try (var channel = java.nio.channels.FileChannel.open(segment, StandardOpenOption.WRITE))
+        {
+            channel.truncate(cut.offset());
+        }
+
+        // A checkpoint from while the segment was still active, recorded at an offset that no
+        // longer exists. This is the state that took the shortcut.
+        Files.writeString(journalDir.resolve(CHECKPOINT_FILE),
+                "journal-0-" + sequenceOfOnlySegment() + "="
+                        + entries.get(entries.size() - 1).offset() + ":" + cut.sequence() + "\n");
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.isClean())
+                .as("a segment that lost entries after sealing is not a clean read. sink: %s", sink)
+                .isFalse();
+        assertThat(sink.missingEntries)
+                .as("the seal record knows how many entries the segment held, and is the only "
+                        + "thing that does. sink: %s", sink)
+                .isGreaterThan(0L);
+        assertThat(sink.corruptRegions)
+                .as("and the declared data end lying past the end of the file is itself the "
+                        + "evidence of the loss. sink: %s", sink)
+                .anySatisfy(region -> assertThat(region).contains("declared data end lies outside the file"));
+    }
+
+    /**
+     * The sweep must never hand back an exchange it has just let go of.
+     * <p>
+     * The lookup came first and the sweep second, on a reference already taken — so an
+     * exchange past {@code maxAge} that received one more metadata event on the tick that
+     * tripped the interval was evicted, reported abandoned, and then returned to the caller
+     * anyway. Everything set on it afterwards went into an object no longer in the map, and
+     * the end event arrived to find nothing: one exchange, reported twice, complete neither
+     * time. Silent, because both reports are ones a reader legitimately emits.
+     */
+    @Test
+    void theSweepNeverReturnsAnExchangeItJustEvicted()
+    {
+        final CollectingSink sink = new CollectingSink();
+        final ExchangeReassembler reassembler = new ExchangeReassembler(sink,
+                ReassemblyOptions.DEFAULTS
+                        .withMaxAge(Duration.ofNanos(1))
+                        .withSweepIntervalEvents(2));
+
+        // Event one creates it. Event two trips the interval, and by then it is older than
+        // the age limit, so the sweep takes it.
+        reassembler.onClientRequest("req-swept", JournalLevel.FULL, "GET /slow HTTP/1.1",
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+        reassembler.onUpstreamRequest("req-swept", JournalLevel.FULL, "GET /slow HTTP/1.1",
+                new MutableFastGatewayHeaders(), null);
+
+        assertThat(sink.abandoned)
+                .as("the eviction itself is expected. sink: %s", sink)
+                .containsExactly("req-swept:TIMED_OUT");
+
+        reassembler.onEnd("req-swept", new FastGatewayAttributes(), 1L, 2L, 200,
+                0L, 0L, 0L, 0L, 0L, 0L, 0L, BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
+
+        assertThat(sink.orphanedEnds)
+                .as("the event after the eviction must be tracked, not applied to a detached "
+                        + "object. sink: %s", sink)
+                .isEmpty();
+        assertThat(sink.incompleteEnds)
+                .as("it is an incomplete record — the start line went with the eviction — but it "
+                        + "is this exchange's record, not an orphan. sink: %s", sink)
+                .containsExactly("req-swept:NO_START_EVENT");
+    }
+
+    /**
+     * A consumer that refuses the <em>mismatch report</em> must lose no more than one that
+     * refuses the exchange itself.
+     * <p>
+     * Verification reports through {@code onChecksumMismatch}, which is consumer code like
+     * any other. Running it outside the region that restores the in-flight exchange meant a
+     * throw from there left the reassembler having already taken the exchange out of its
+     * map: the decoder rewound the end entry as designed, and the retry found nothing to
+     * attach it to. The record came back as an orphaned end with its start line, headers and
+     * every body fragment gone — a worse outcome than the skip this whole mechanism replaced,
+     * reached through the mechanism itself.
+     */
+    @Test
+    void aConsumerThatRefusesAMismatchReportDoesNotLoseTheExchange() throws IOException
+    {
+        final String reqId = "req-refused-mismatch";
+        final byte[] body = "the original body".getBytes(StandardCharsets.ISO_8859_1);
+
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            journal.clientRequest(JournalLevel.FULL, reqId, ByteBuffer.wrap("GET / HTTP/1.1".getBytes(StandardCharsets.ISO_8859_1)),
+                    new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+            journal.requestBody(reqId, ByteBuffer.wrap(body));
+            journal.endExchange(reqId, new FastGatewayAttributes(),
+                    1L, 2L, 200, 0L, body.length, 0L, 0L, 0L, 0L, 0L,
+                    BodyChecksum.ofUnsigned32(0x0BADC0DE), BodyChecksum.NOT_RECORDED, false, false);
+        }
+
+        final RefusingSink sink = RefusingSink.refusingTheNextMismatchReport();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+
+        assertThat(sink.stalls).as("the refused report stalls the segment. sink: %s", sink).hasSize(1);
+        assertThat(sink.delivered).isEmpty();
+
+        tailer.runTick();
+
+        assertThat(sink.orphanedEnds)
+                .as("the retry must find the exchange the first attempt had removed. sink: %s", sink)
+                .isEmpty();
+        assertThat(sink.delivered).containsExactly(reqId);
+        assertThat(sink.mismatches)
+                .as("and the mismatch itself must still be reported")
+                .containsExactly(reqId + ":REQUEST");
+        assertThat(CollectingSink.concat(sink.lastExchange.getRequestBodyFragments()))
+                .as("with the body that was assembled before the refusal")
+                .isEqualTo(body);
+    }
+
+    /**
+     * What recovery reports as discarded must be the content it could not read, not the
+     * region that content sits in.
+     * <p>
+     * A segment is pre-allocated at full size, so "everything past the last valid entry" is
+     * almost entirely untouched tail. Answering the question as a yes/no — is the remainder
+     * all zeroes? — made a single torn entry report the whole pre-allocation as lost, which
+     * is a six-figure integrity metric for a few dozen bytes of damage. An operator who
+     * cannot trust the number cannot use it.
+     */
+    @Test
+    void recoveryReportsOnlyTheContentItCouldNotRead() throws IOException
+    {
+        writeExchanges(4);
+        final Path sealed = onlySealedSegment();
+
+        final byte[] active = Files.readAllBytes(sealed);
+        final int preAllocatedSize = active.length;
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC,
+                R7fConstants.PREAMBLE_OFF_SEAL_FLAGS + Integer.BYTES, (byte) 0);
+
+        // A torn entry right after the last valid one: a plausible magic, then rubbish. The
+        // 200-odd kilobytes behind it stay zero, exactly as the warmer left them.
+        final List<EntryRef> entries = entriesOf(sealed);
+        final EntryRef last = entries.get(entries.size() - 1);
+        final int tornStart = last.offset() + last.totalLength();
+        final int tornLength = 40;
+        java.util.Arrays.fill(active, tornStart, tornStart + tornLength, (byte) 0xAB);
+
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        final CollectingSink recovery = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, recovery);
+
+        assertThat(recovery.recoveredSegments).as("recovery sink: %s", recovery).hasSize(1);
+        assertThat(recovery.recoveryDiscardedBytes)
+                .as("the damage is %d bytes, not the %d-byte pre-allocation it sits in. sink: %s",
+                        tornLength, preAllocatedSize, recovery)
+                .containsExactly((long) tornLength);
+    }
+
+    /**
+     * Recovery can leave entries in a segment that it deliberately did not publish, and the
+     * tailer must not delete such a segment however clean its own read was.
+     * <p>
+     * This is the one case the tailer cannot work out for itself. Recovery stops at a
+     * sequence regression and seals at that point, so everything after it lies past Data End
+     * — outside what any reader is allowed to look at. The tailer therefore sees a short,
+     * entirely healthy segment, reads it to the end without a single anomaly, and would
+     * delete it. The entries recovery was careful to preserve would be destroyed by the one
+     * component whose own regression handling exists to preserve them, which is why the seal
+     * record carries the decision across the handover.
+     */
+    @Test
+    void aSegmentRecoveryShortenedAroundARegressionIsNeverDeleted() throws IOException
+    {
+        writeExchanges(6);
+        final Path sealed = onlySealedSegment();
+
+        // Put it back the way an unclean stop would have left it: same bytes, no seal record.
+        final byte[] active = Files.readAllBytes(sealed);
+        java.util.Arrays.fill(active, R7fConstants.PREAMBLE_OFF_SEAL_MAGIC,
+                R7fConstants.PREAMBLE_OFF_SEAL_FLAGS + Integer.BYTES, (byte) 0);
+        final Path activePath = journalDir.resolve(activeNameFor(sealed));
+        Files.delete(sealed);
+        Files.write(activePath, active);
+
+        final List<EntryRef> entries = entriesOf(activePath);
+        final EntryRef victim = entries.get(entries.size() / 2);
+        rewriteSequence(activePath, victim, R7fConstants.FIRST_ENTRY_SEQUENCE);
+
+        final CollectingSink recovery = new CollectingSink();
+        R7fRecoveryManager.cleanAndRecover(journalDir, recovery);
+        assertThat(recovery.sequenceRegressions).as("recovery sink: %s", recovery).hasSize(1);
+
+        final Path resealed = onlySealedSegment();
+        final ByteBuffer header = ByteBuffer.wrap(Files.readAllBytes(resealed)).order(ByteOrder.BIG_ENDIAN);
+        assertThat(header.getLong(R7fConstants.PREAMBLE_OFF_DATA_END))
+                .as("recovery seals at the regression, hiding what follows")
+                .isEqualTo(victim.offset());
+        assertThat(header.getInt(R7fConstants.PREAMBLE_OFF_SEAL_FLAGS) & R7fConstants.SEAL_FLAG_RETAIN)
+                .as("and records that what it hid is content, not damage")
+                .isNotZero();
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(sink.isClean())
+                .as("the tailer's own read is spotless — which is exactly the trap. sink: %s", sink)
+                .isTrue();
+        assertThat(Files.exists(resealed))
+                .as("and it must still not delete a segment recovery asked to be kept")
+                .isTrue();
+
+        // Nor may it read it again: finished is finished, it is only not disposable.
+        final CollectingSink second = new CollectingSink();
+        new R7Tailer(journalDir, second, second,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+
+        assertThat(second.completed).as("a kept segment must not be replayed. sink: %s", second).isEmpty();
+        assertThat(Files.exists(resealed)).isTrue();
+    }
+
+    /**
+     * The in-flight ceiling must bound memory without ever evicting the exchange the
+     * current event belongs to.
+     * <p>
+     * At {@code maxInFlight = 1} the distinction is not academic: a per-event check makes
+     * every second event of the only exchange in flight evict it, so an exchange can never
+     * be assembled at all and the setting is fatal rather than merely tight. Making room is
+     * something admitting a <em>new</em> exchange does, and nothing else.
+     */
+    @Test
+    void anExchangeSurvivesTheSmallestPossibleInFlightBudget() throws IOException
+    {
+        writeExchanges(1);
+
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)).withMaxInFlight(1)).runTick();
+
+        assertThat(sink.isClean()).as("sink: %s", sink).isTrue();
+        assertThat(sink.completed)
+                .as("the one exchange in flight must not be evicted by its own body event")
+                .containsOnlyKeys("req-0");
+    }
+
+    /**
+     * A consumer that refuses one exchange, records what it did receive, and can be told to
+     * stop refusing — a sink that is briefly unavailable and then is not.
+     */
+    private static final class RefusingSink implements ExchangeCompletionListener, JournalIntegrityListener
+    {
+        final List<String> delivered = new ArrayList<>();
+        final List<String> stalls = new ArrayList<>();
+        final List<String> corruptRegions = new ArrayList<>();
+        final List<String> orphanedEnds = new ArrayList<>();
+        final List<String> mismatches = new ArrayList<>();
+        final List<String> abandoned = new ArrayList<>();
+        JournalExchange lastExchange;
+
+        private String refusing;
+        private boolean refusingMismatch;
+
+        RefusingSink(final String requestIdToRefuse)
+        {
+            this.refusing = requestIdToRefuse;
+        }
+
+        /**
+         * Refuses once and then behaves, which is what a sink that was briefly unavailable
+         * looks like — and what makes the retry observable rather than an infinite stall.
+         */
+        static RefusingSink refusingTheNextMismatchReport()
+        {
+            final RefusingSink sink = new RefusingSink(null);
+            sink.refusingMismatch = true;
+            return sink;
+        }
+
+        void acceptEverything()
+        {
+            refusing = null;
+        }
+
+        @Override
+        public void onComplete(final JournalExchange exchange)
+        {
+            if (exchange.getRequestId().equals(refusing))
+            {
+                throw new IllegalStateException("sink unavailable for " + refusing);
+            }
+            lastExchange = exchange;
+            delivered.add(exchange.getRequestId());
+        }
+
+        @Override
+        public void onChecksumMismatch(final JournalExchange exchange, final BodyKind kind,
+                                       final BodyChecksum journaled, final BodyChecksum observed)
+        {
+            if (refusingMismatch)
+            {
+                refusingMismatch = false;
+                throw new IllegalStateException("sink unavailable for the mismatch report");
+            }
+            mismatches.add(exchange.getRequestId() + ":" + kind);
+        }
+
+        @Override
+        public void onOrphanedEnd(final String requestId)
+        {
+            orphanedEnds.add(requestId);
+        }
+
+        @Override
+        public void onAbandoned(final JournalExchange exchange, final IncompleteReason reason)
+        {
+            abandoned.add(exchange.getRequestId() + ":" + reason);
+        }
+
+        @Override
+        public void onCorruptRegion(final String segment, final long offset, final long bytesSkipped, final String reason)
+        {
+            corruptRegions.add(segment + "@" + offset + ":" + reason);
+        }
+
+        @Override
+        public void onDeliveryStalled(final String segment, final long offset, final int sequence, final Throwable cause)
+        {
+            stalls.add(segment + "@" + offset + ":#" + sequence);
+        }
+
+        @Override
+        public String toString()
+        {
+            return "delivered=" + delivered + ", stalls=" + stalls + ", mismatches=" + mismatches
+                    + ", abandoned=" + abandoned
+                    + ", corruptRegions=" + corruptRegions + ", orphanedEnds=" + orphanedEnds;
+        }
+    }
+
+    /**
+     * A shard whose current segment stalls must not be read ahead of. Reading segment N+1
+     * while segment N is still short of its end delivers N+1's events before N's own
+     * remaining ones — here, an EndExchange for an exchange whose ClientRequest is stuck
+     * behind the stall — and the reassembler reports it an orphan: a real, permanent loss
+     * with no damage anywhere in the journal, because the reader read out of order.
+     */
+    @Test
+    void shardIsNotAdvancedPastAStalledSegment() throws IOException
+    {
+        // Segment 1 (shard 0): "blocker" completes here (its END will be refused by the
+        // sink), then "cross-seg"'s ClientRequest follows — and must never be read this
+        // tick, because it sits after the entry the sink is about to refuse.
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            writeClientRequest(journal, "blocker");
+            writeEndExchange(journal, "blocker");
+            writeClientRequest(journal, "cross-seg");
+        }
+
+        // Segment 2 (shard 0, next sequence): only "cross-seg"'s END. If the tailer reads
+        // this segment in the same tick as the stalled segment 1, the reassembler has no
+        // record of "cross-seg" yet (its ClientRequest is still stuck in segment 1) and
+        // reports an orphan.
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            writeEndExchange(journal, "cross-seg");
+        }
+
+        final RefusingSink sink = new RefusingSink("blocker");
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        tailer.runTick();
+
+        assertThat(sink.stalls).as("the refusal on 'blocker' must stall segment 1. sink: %s", sink).hasSize(1);
+        assertThat(sink.orphanedEnds)
+                .as("segment 2 must not be read while segment 1 is stalled - "
+                        + "'cross-seg' has not lost anything, it just has not arrived yet. sink: %s", sink)
+                .isEmpty();
+        assertThat(sink.delivered).as("sink: %s", sink).doesNotContain("cross-seg");
+
+        // The sink recovers, segment 1 finishes, and only then is segment 2 read.
+        sink.acceptEverything();
+        tailer.runTick();
+
+        assertThat(sink.delivered)
+                .as("both exchanges complete once the shard is read in order. sink: %s", sink)
+                .contains("blocker", "cross-seg");
+        assertThat(sink.orphanedEnds).as("sink: %s", sink).isEmpty();
+    }
+
+    /**
+     * {@code R7Tailer#shutdown()} was added so a graceful stop (a container's SIGTERM
+     * handler, run from a JVM shutdown hook thread) can report in-flight exchanges before
+     * the process exits. But the hook thread has no coordination with whatever thread is
+     * driving the normal poll loop's {@code runTick()} calls - and a SIGTERM can land at any
+     * point while a tick is running, not just between ticks.
+     * <p>
+     * {@code runTick()} and {@code shutdown()} both read and structurally mutate the same
+     * plain, non-thread-safe {@code checkpoints} map ({@code processFile}'s
+     * {@code checkpoints.put(...)}, {@code forgetCheckpointsWithoutSegments}'s
+     * {@code retainAll(...)}, and {@code saveCheckpoints}'s {@code forEach(...)} all touch
+     * it) with no lock between them. Run concurrently, exactly as a real SIGTERM during a
+     * real tick would, this must not corrupt the checkpoint state or throw - the shutdown
+     * path exists to make a restart safer, not to add a new way to crash or corrupt progress
+     * during the very moment a graceful stop is trying to preserve it.
+     */
+    @Test
+    void shutdownDuringAConcurrentTickDoesNotCorruptCheckpoints() throws Exception
+    {
+        // One journal, one warmer thread, but a segment small enough to rotate every couple
+        // of exchanges - the point is many checkpoint keys churning quickly, not many
+        // journals. A dedicated pool per shard (as a real deployment would have) would make
+        // this needlessly heavy for a test whose subject is the tailer's own locking.
+        final long tinySegment = 65536L;
+        final java.util.concurrent.atomic.AtomicBoolean stop = new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        final CollectingSink sink = new CollectingSink();
+        final R7Tailer tailer = new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1)));
+
+        final Thread ticker = new Thread(() -> {
+            try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, tinySegment, true)))
+            {
+                final long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+                int i = 0;
+                while (!stop.get() && System.nanoTime() < deadline)
+                {
+                    final String reqId = "req-" + i++;
+                    writeClientRequest(journal, reqId);
+                    writeEndExchange(journal, reqId);
+                    tailer.runTick();
+                }
+            }
+            catch (final Throwable t)
+            {
+                failure.compareAndSet(null, t);
+            }
+            finally
+            {
+                stop.set(true);
+            }
+        }, "ticker");
+
+        final Thread shutdowner = new Thread(() -> {
+            try
+            {
+                while (!stop.get())
+                {
+                    tailer.shutdown();
+                }
+            }
+            catch (final Throwable t)
+            {
+                failure.compareAndSet(null, t);
+            }
+        }, "shutdowner");
+
+        ticker.start();
+        shutdowner.start();
+        ticker.join(10_000);
+        stop.set(true);
+        shutdowner.join(10_000);
+
+        assertThat(ticker.isAlive()).as("ticker thread must have stopped").isFalse();
+        assertThat(shutdowner.isAlive()).as("shutdowner thread must have stopped").isFalse();
+        assertThat(failure.get())
+                .as("runTick() and shutdown() raced on shared, unsynchronized state")
+                .isNull();
+    }
+
+    private static void writeClientRequest(final R7fJournal journal, final String reqId) throws IOException
+    {
+        journal.clientRequest(JournalLevel.FULL, reqId,
+                ByteBuffer.wrap(("GET /" + reqId + " HTTP/1.1").getBytes(StandardCharsets.ISO_8859_1)),
+                new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+    }
+
+    private static void writeEndExchange(final R7fJournal journal, final String reqId)
+    {
+        journal.endExchange(reqId, new FastGatewayAttributes(),
+                1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
+    }
+
+    /* ---------- journal writing ---------- */
+
+    private void writeExchanges(final int count) throws IOException
+    {
+        try (R7fJournal journal = new R7fJournal(new R7fJournalProvider(journalDir, 0, SEGMENT_SIZE, true)))
+        {
+            for (int i = 0; i < count; i++)
+            {
+                final String reqId = "req-" + i;
+                journal.clientRequest(JournalLevel.FULL, reqId,
+                        ByteBuffer.wrap(("GET /item/" + i + " HTTP/1.1").getBytes(StandardCharsets.ISO_8859_1)),
+                        new MutableFastGatewayHeaders(), InetAddress.getLoopbackAddress(), IpSource.SOCKET);
+                journal.requestBody(reqId, ByteBuffer.wrap(("body-" + i).getBytes(StandardCharsets.ISO_8859_1)));
+                journal.endExchange(reqId, new FastGatewayAttributes(),
+                        1L, 2L, 200, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                        BodyChecksum.NOT_RECORDED, BodyChecksum.NOT_RECORDED, false, false);
+            }
+        }
+    }
+
+    private CollectingSink tail() throws IOException
+    {
+        final CollectingSink sink = new CollectingSink();
+        new R7Tailer(journalDir, sink, sink,
+                ReassemblyOptions.DEFAULTS.withMaxAge(Duration.ofHours(1))).runTick();
+        return sink;
+    }
+
+    /* ---------- on-disk framing, encoded on purpose ---------- */
+
+    /**
+     * The entries a reader gives up when {@code victim} is damaged: it and every entry that
+     * starts after it in the same block, the one straddling the next boundary included. The
+     * reader resumes at that boundary, steps over the straddler's tail, and loses nothing else.
+     */
+    private static long entriesLostWithTheBlockOf(final Path segment, final List<EntryRef> entries, final EntryRef victim)
+            throws IOException
+    {
+        final int blockSize = R7fTestFraming.blockSize(ByteBuffer.wrap(Files.readAllBytes(segment)).order(ByteOrder.BIG_ENDIAN));
+        final int nextBoundary = (victim.offset() / blockSize + 1) * blockSize;
+        assertThat(nextBoundary)
+                .as("the test needs entries beyond the damaged block")
+                .isLessThan(entries.getLast().offset());
+        return entries.stream().filter(e -> e.offset() >= victim.offset() && e.offset() < nextBoundary).count();
+    }
+
+    private static void flipByte(final Path file, final int offset) throws IOException
+    {
+        final byte[] bytes = Files.readAllBytes(file);
+        bytes[offset] ^= (byte) 0xFF;
+        Files.write(file, bytes);
+    }
+
+    private static void overwrite(final Path file, final int offset, final byte[] replacement) throws IOException
+    {
+        final byte[] bytes = Files.readAllBytes(file);
+        System.arraycopy(replacement, 0, bytes, offset, Math.min(replacement.length, bytes.length - offset));
+        Files.write(file, bytes);
+    }
+
+    /**
+     * The active name a sealed segment was rotated from: the first four fields are the ones
+     * sealing preserves, and the two timestamps are what it appends.
+     */
+    private static String activeNameFor(final Path sealedSegment)
+    {
+        final String[] parts = sealedSegment.getFileName().toString()
+                .replace(R7fConstants.R7F_FILE_EXTENSION, "")
+                .split("-");
+        return String.join("-", parts[0], parts[1], parts[2], parts[3]) + R7fConstants.ACTIVE_FILE_EXTENSION;
+    }
+
+    private long sequenceOfOnlySegment() throws IOException
+    {
+        final String[] parts = onlySealedSegment().getFileName().toString()
+                .replace(R7fConstants.R7F_FILE_EXTENSION, "")
+                .split("-");
+        return Long.parseLong(parts[3]);
+    }
+
+    private Path onlySealedSegment() throws IOException
+    {
+        final List<Path> sealed = filesEndingWith(R7fConstants.R7F_FILE_EXTENSION);
+        assertThat(sealed).as("expected exactly one sealed segment").hasSize(1);
+        return sealed.get(0);
+    }
+
+    private List<Path> quarantinedFiles() throws IOException
+    {
+        return filesEndingWith(R7fConstants.CORRUPT_FILE_EXTENSION);
+    }
+
+    private List<Path> filesEndingWith(final String suffix) throws IOException
+    {
+        try (Stream<Path> s = Files.list(journalDir))
+        {
+            return s.filter(p -> p.getFileName().toString().endsWith(suffix)).sorted().toList();
+        }
+    }
+}

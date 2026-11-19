@@ -1,0 +1,25 @@
+version: upstream-request-journal-test
+
+journal:
+  request:
+    level: HEADERS
+  response:
+    level: HEADERS
+
+routes:
+  # The target URL has a path of its own, which the relay puts in front of the request's.
+  - id: sent
+    match:
+      - PathPrefix:
+          prefix: /sent
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}/base
+
+  - id: status
+    match:
+      - PathPrefix:
+          prefix: /status
+    upstream:
+      targets:
+        - url: http://${UPSTREAM_HOST}:${WIREMOCK_PORT}

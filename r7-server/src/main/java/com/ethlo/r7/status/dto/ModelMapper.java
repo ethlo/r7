@@ -1,0 +1,202 @@
+package com.ethlo.r7.status.dto;
+
+import com.ethlo.r7.condition.Condition;
+import com.ethlo.r7.api.ComponentStatus;
+import com.ethlo.r7.journal.HeaderNameSet;
+import com.ethlo.r7.util.FilterRegistry;
+import com.ethlo.r7.util.SensitiveConfig;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import com.ethlo.r7.api.GatewayFilter;
+import com.ethlo.r7.config.DefaultGatewayRoute;
+import com.ethlo.r7.config.RouteDefinition;
+import com.ethlo.r7.config.TimeoutConfig;
+import com.ethlo.r7.config.UpstreamConfig;
+import com.ethlo.r7.journal.JournalPolicy;
+import com.ethlo.r7.journal.JournalRule;
+import com.ethlo.r7.status.PipelineVisualizer;
+import com.ethlo.r7.status.RouteMetricsBucket;
+
+public class ModelMapper
+{
+    private static final FilterRegistry FILTER_REGISTRY = new FilterRegistry();
+
+    public static RouteConfigDto mapRouteConfig(final DefaultGatewayRoute route, final int order, final ComponentStatus upstreamStatus, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
+    {
+        final RouteDefinition def = route.routeDefinition();
+
+        final JournalDto journal = mapJournal(route.journal());
+
+        final List<FilterDto> filters = def.filters() != null ? def.filters().stream()
+                .map(f -> new FilterDto(f.name(), maskedArgs(f.name(), f.args(), safeRequestHeaders, safeResponseHeaders)))
+                .toList() : Collections.emptyList();
+
+        return new RouteConfigDto(
+                def.id(),
+                route.group(),
+                order,
+                toMatchNode(route.match()),
+                journal,
+                def.upstream() != null ? SensitiveConfig.redactUrlCredentials(def.upstream().targets().toString()) : null,
+                toUpstream(def.upstream()),
+                filters,
+                PipelineVisualizer.buildNestedVisualization(route.routeDefinition().upstream(), upstreamStatus, route.filters().toArray(new GatewayFilter[0]), route::filterLevel)
+        );
+    }
+
+    /**
+     * A journal policy as the management view shows it: base levels and caps, then the rules in
+     * the order they are checked. For each key a rule names, the rules checked before it that name
+     * the same key are listed as possibly overriding it, and for an {@code on_request} rule every
+     * {@code on_response} rule naming it too, since {@code on_response} decides last. Only
+     * "possibly": whether one condition covers another cannot be decided for opaque predicates.
+     */
+    public static JournalDto mapJournal(final JournalPolicy policy)
+    {
+        final List<JournalDto.Rule> rules = new ArrayList<>();
+        final List<JournalRule> onRequest = policy.onRequest();
+        final List<JournalRule> onResponse = policy.onResponse();
+        for (int i = 0; i < onRequest.size(); i++)
+        {
+            final List<JournalRule> before = new ArrayList<>(onRequest.subList(0, i));
+            before.addAll(onResponse);
+            rules.add(rule("on_request", onRequest.get(i), before));
+        }
+        for (int i = 0; i < onResponse.size(); i++)
+        {
+            rules.add(rule("on_response", onResponse.get(i), onResponse.subList(0, i)));
+        }
+        return new JournalDto(policy.request(), policy.response(), cap(policy.requestTruncateAt()), cap(policy.responseTruncateAt()), rules);
+    }
+
+    private static JournalDto.Rule rule(final String stage, final JournalRule r, final List<JournalRule> precedence)
+    {
+        final Map<String, List<String>> mayBeOverriddenBy = new LinkedHashMap<>();
+        for (final RuleKey key : RuleKey.values())
+        {
+            if (key.names(r))
+            {
+                final List<String> by = precedence.stream().filter(key::names).map(JournalRule::label).toList();
+                if (!by.isEmpty())
+                {
+                    mayBeOverriddenBy.put(key.label, by);
+                }
+            }
+        }
+        return new JournalDto.Rule(stage, r.label(), r.path(), r.request(), r.response(), cap(r.requestTruncateAt()), cap(r.responseTruncateAt()), r.errors(), mayBeOverriddenBy);
+    }
+
+    private enum RuleKey
+    {
+        REQUEST("request"),
+        REQUEST_TRUNCATE_BODY_AT("request.truncate_body_at"),
+        RESPONSE("response"),
+        RESPONSE_TRUNCATE_BODY_AT("response.truncate_body_at");
+
+        private final String label;
+
+        RuleKey(final String label)
+        {
+            this.label = label;
+        }
+
+        boolean names(final JournalRule rule)
+        {
+            return switch (this)
+            {
+                case REQUEST -> rule.request() != null;
+                case REQUEST_TRUNCATE_BODY_AT -> rule.requestTruncateAt() != JournalPolicy.NO_CAP;
+                case RESPONSE -> rule.response() != null;
+                case RESPONSE_TRUNCATE_BODY_AT -> rule.responseTruncateAt() != JournalPolicy.NO_CAP;
+            };
+        }
+    }
+
+    private static Long cap(final long truncateAt)
+    {
+        return truncateAt == JournalPolicy.NO_CAP ? null : truncateAt;
+    }
+
+    private static UpstreamDto toUpstream(final UpstreamConfig upstream)
+    {
+        if (upstream == null)
+        {
+            return null;
+        }
+        final List<String> targets = upstream.targets() != null
+                ? upstream.targets().stream().map(t -> SensitiveConfig.redactUrlCredentials(t.url())).toList()
+                : List.of();
+        final TimeoutConfig timeouts = Optional.ofNullable(upstream.timeouts()).orElse(TimeoutConfig.defaults());
+        final String fallbackRouteId = upstream.fallback() != null ? upstream.fallback().routeId() : null;
+        return new UpstreamDto(targets, timeouts.read(), timeouts.connect(), upstream.healthCheck(), fallbackRouteId, upstream.preserveHost());
+    }
+
+    /**
+     * Without this the management endpoint renders filter configuration verbatim, putting upstream
+     * credentials (InjectBasicAuth), password hashes (BasicAuth) and injected tokens on any page
+     * that can reach it. Header values are shown by the same whitelist the journal uses - the
+     * effective one, including any override in server.yaml.
+     */
+    static Object maskedArgs(final String filterName, final Object args, final HeaderNameSet safeRequestHeaders, final HeaderNameSet safeResponseHeaders)
+    {
+        return SensitiveConfig.mask(FILTER_REGISTRY.get(filterName).configClass(), args, safeRequestHeaders, safeResponseHeaders);
+    }
+
+    private static MatchDto toMatchNode(final Condition condition)
+    {
+        if (condition == null)
+        {
+            return null;
+        }
+
+        final List<MatchDto> childNodes = new ArrayList<>();
+        for (final Condition child : condition.children())
+        {
+            childNodes.add(toMatchNode(child));
+        }
+
+        return new MatchDto(
+                condition.name(),
+                condition.summary(),
+                childNodes
+        );
+    }
+
+    public static RouteMetricsDto routeMetrics(final Map.Entry<String, RouteMetricsBucket> routeMetricsBucket)
+    {
+        final RouteMetricsBucket gf = routeMetricsBucket.getValue();
+        final TrafficFlowDto traffic = mapTraffic(gf);
+        final PerformanceTelemetryDto performance = new PerformanceTelemetryDto(Duration.ofNanos(gf.getAvgLatencyNanos()));
+        final RequestStatsDto stats = new RequestStatsDto(gf.getTotalRequests(), gf.getActiveRequests(),
+                gf.getTotalWsRequests(), gf.getActiveWsRequests(), gf.getLastActiveTime(),
+                gf.getUpstreamResponseStatuses(), gf.getClientResponseStatuses(),
+                gf.getUpstreamRequests()
+        );
+
+        return new RouteMetricsDto(routeMetricsBucket.getKey(), stats, traffic, performance, gf.getSparklineData(), gf.getLatency());
+    }
+
+    private static TrafficFlowDto mapTraffic(RouteMetricsBucket routeMetricsBucket)
+    {
+        final IngressDto ingress = new IngressDto(
+                routeMetricsBucket.getTotalRequestHeaderBytes(),
+                routeMetricsBucket.getTotalRequestBodyBytes(),
+                routeMetricsBucket.getTotalRequestHeaderBytes() + routeMetricsBucket.getTotalRequestBodyBytes()
+        );
+
+        final EgressDto egress = new EgressDto(
+                routeMetricsBucket.getTotalResponseHeaderBytes(),
+                routeMetricsBucket.getTotalResponseBodyBytes(),
+                routeMetricsBucket.getTotalResponseHeaderBytes() + routeMetricsBucket.getTotalResponseBodyBytes()
+        );
+
+        return new TrafficFlowDto(ingress, egress, routeMetricsBucket.getTotalJournalBytes());
+    }
+}

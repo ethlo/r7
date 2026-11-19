@@ -1,0 +1,89 @@
+package com.ethlo.r7.filters;
+
+import com.ethlo.r7.util.SensitiveConfig;
+import com.ethlo.r7.api.ShortInfo;
+import com.ethlo.r7.api.UpstreamRequestGatewayExchange;
+import com.ethlo.r7.api.UpstreamRequestGatewayFilter;
+import com.ethlo.r7.doc.Description;
+import com.ethlo.r7.doc.Sensitive;
+import com.ethlo.r7.spi.FilterCreationContext;
+import com.ethlo.r7.spi.GatewayFilterFactory;
+import com.ethlo.r7.util.ValidatorUtils;
+import com.ethlo.r7.validation.ValidatableConfig;
+import com.ethlo.r7.validation.ValidationResult;
+import com.google.auto.service.AutoService;
+
+@SuppressWarnings("rawtypes")
+@AutoService(GatewayFilterFactory.class)
+@Description("Adds a custom header to the upstream request.")
+public final class AddRequestHeaderFactory implements GatewayFilterFactory<AddRequestHeaderFactory.Config>
+{
+    private static final String FILTER_NAME = "AddRequestHeader";
+
+    @Override
+    public String name()
+    {
+        return FILTER_NAME;
+    }
+
+    @Override
+    public Class<Config> configClass()
+    {
+        return Config.class;
+    }
+
+    @Override
+    public UpstreamRequestGatewayFilter create(final Config config, final FilterCreationContext filterCreationContext)
+    {
+        return new GF(config);
+    }
+
+    public record Config(
+            @Description("The name of the header.")
+            String name,
+
+            @Sensitive(unlessSafeHeaderIn = "name")
+            @Description("The value of the header.")
+            String value) implements ValidatableConfig
+    {
+        @Override
+        public void validate(final ValidationResult result)
+        {
+            new ValidatorUtils(result)
+                    .required("name", this.name())
+                    .required("value", this.value())
+                    .httpToken("name", this.name())
+                    .safeHeaderText("value", this.value());
+        }
+    }
+
+    private static final class GF implements UpstreamRequestGatewayFilter, ShortInfo
+    {
+        private final String name;
+        private final String value;
+
+        public GF(final Config config)
+        {
+            this.name = config.name();
+            this.value = config.value();
+        }
+
+        @Override
+        public void onUpstreamRequest(final UpstreamRequestGatewayExchange exchange)
+        {
+            exchange.upstreamRequest().headers().add(this.name, this.value);
+        }
+
+        @Override
+        public String name()
+        {
+            return FILTER_NAME;
+        }
+
+        @Override
+        public String summary()
+        {
+            return FILTER_NAME + ": " + this.name + ": " + SensitiveConfig.MASK;
+        }
+    }
+}

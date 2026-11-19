@@ -1,0 +1,11 @@
+routes:
+  - id: route-v1
+    match:
+      - PathPrefix:
+          prefix: /v1
+    filters:
+      - StripPathPrefix:
+          parts: 1
+    upstream:
+      targets:
+        - url: "http://${UPSTREAM_HOST}:${WIREMOCK_PORT}/"
