@@ -21,6 +21,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -52,6 +53,7 @@ import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 
 /**
@@ -61,12 +63,15 @@ import com.nimbusds.jwt.SignedJWT;
  */
 class JwtAuthFactoryTest
 {
-    private static final String ISSUER = "https://auth.example.com/realms/acme";
+    private static final String ISSUER = "https://auth.example.com/realms/tenant-a";
+    private static final String OTHER_ISSUER = "https://auth.example.com/realms/tenant-b";
     private static final String AUDIENCE = "billing";
     private static final String INVALID_TOKEN = "Bearer error=\"invalid_token\"";
 
     private static RSAPrivateKey privateKey;
     private static JWKSource<SecurityContext> keys;
+    private static RSAPrivateKey otherPrivateKey;
+    private static JWKSource<SecurityContext> otherKeys;
 
     @BeforeAll
     static void generateKeyPair() throws Exception
@@ -76,6 +81,10 @@ class JwtAuthFactoryTest
         final KeyPair keyPair = generator.generateKeyPair();
         privateKey = (RSAPrivateKey) keyPair.getPrivate();
         keys = new ImmutableJWKSet<>(new JWKSet(new RSAKey.Builder((RSAPublicKey) keyPair.getPublic()).keyID("k1").build()));
+        // The same key id: a realm's keys are told apart by their issuer, never by a kid.
+        final KeyPair otherKeyPair = generator.generateKeyPair();
+        otherPrivateKey = (RSAPrivateKey) otherKeyPair.getPrivate();
+        otherKeys = new ImmutableJWKSet<>(new JWKSet(new RSAKey.Builder((RSAPublicKey) otherKeyPair.getPublic()).keyID("k1").build()));
     }
 
     @Test
@@ -147,7 +156,7 @@ class JwtAuthFactoryTest
     @Test
     void aTokenFromAnotherIssuerIsRefused() throws Exception
     {
-        assertRefused(token(claims().issuer("https://auth.example.com/realms/other").build()));
+        assertRefused(token(claims().issuer("https://auth.example.com/realms/tenant-c").build()));
     }
 
     @Test
@@ -231,7 +240,7 @@ class JwtAuthFactoryTest
         };
         final ClientRequestGatewayExchange exchange = exchange("Bearer " + token(claims().build()));
 
-        new JwtAuthFactory.GF(config(), JwtAuthFactory.buildJwtProcessor(config(), failing)).onClientRequest(exchange);
+        new JwtAuthFactory.GF(config(), JwtAuthFactory.buildJwtProcessors(config(), issuer -> failing)).onClientRequest(exchange);
 
         final ArgumentCaptor<ShortCircuitGatewayResponse> captor = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
         verify(exchange).shortCircuit(captor.capture());
@@ -329,7 +338,7 @@ class JwtAuthFactoryTest
     @Test
     void theShortestValidCacheDurationBuildsTheKeySource()
     {
-        final JwtAuthFactory.Config config = new JwtAuthFactory.Config("https://auth.example.com/keys", ISSUER, AUDIENCE, null, null,
+        final JwtAuthFactory.Config config = new JwtAuthFactory.Config("https://auth.example.com/keys", ISSUER, null, AUDIENCE, null, null,
                 JwtAuthFactory.MIN_JWKS_CACHE_DURATION, null, null);
         assertThat(errors(config)).isEmpty();
         assertThat(new JwtAuthFactory().create(config, null)).isNotNull();
@@ -338,7 +347,7 @@ class JwtAuthFactoryTest
     @Test
     void theIssuerAudienceAndJwksUrlAreRequired()
     {
-        assertThat(errors(new JwtAuthFactory.Config(null, null, null, null, null, null, null, null)))
+        assertThat(errors(new JwtAuthFactory.Config(null, null, null, null, null, null, null, null, null)))
                 .anyMatch(error -> error.contains("jwks_url"))
                 .anyMatch(error -> error.contains("issuer"))
                 .anyMatch(error -> error.contains("audience"));
@@ -347,22 +356,162 @@ class JwtAuthFactoryTest
     @Test
     void badValuesAreRefused()
     {
-        assertThat(errors(new JwtAuthFactory.Config("ftp://example.com/keys", ISSUER, AUDIENCE, null, null, null, null, null)))
+        assertThat(errors(new JwtAuthFactory.Config("ftp://example.com/keys", ISSUER, null, AUDIENCE, null, null, null, null, null)))
                 .singleElement().asString().contains("http or https");
-        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, AUDIENCE, null, 301, null, null, null)))
+        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, null, AUDIENCE, null, 301, null, null, null)))
                 .singleElement().asString().contains("between 0 and 300");
-        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, AUDIENCE, null, -1, null, null, null)))
+        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, null, AUDIENCE, null, -1, null, null, null)))
                 .singleElement().asString().contains("between 0 and 300");
-        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, AUDIENCE, null, null, Duration.ofSeconds(59), null, null)))
+        assertThat(errors(new JwtAuthFactory.Config("https://example.com/keys", ISSUER, null, AUDIENCE, null, null, Duration.ofSeconds(59), null, null)))
                 .singleElement().asString().contains("at least");
         assertThat(errors(config(null, Map.of("sub", "Authorization"), false))).singleElement().asString().contains("forward_credentials");
         assertThat(errors(config(null, Map.of("sub", "X-User", "email", "x-user"), false))).singleElement().asString().contains("another claim");
         assertThat(errors(config(null, Map.of("sub", "X-User", "email", "x_user"), false))).singleElement().asString().contains("another claim");
         for (final String hostless : List.of("https:/keys", "https:keys"))
         {
-            assertThat(errors(new JwtAuthFactory.Config(hostless, ISSUER, AUDIENCE, null, null, null, null, null)))
+            assertThat(errors(new JwtAuthFactory.Config(hostless, ISSUER, null, AUDIENCE, null, null, null, null, null)))
                     .singleElement().asString().contains("jwks_url");
         }
+    }
+
+    @Test
+    void eachListedIssuerIsVerifiedWithItsOwnKeys() throws Exception
+    {
+        final JwtAuthFactory.GF filter = multiIssuerFilter(Map.of(ISSUER, keys, OTHER_ISSUER, otherKeys));
+
+        final ClientRequestGatewayExchange first = exchange("Bearer " + token(claims().build()));
+        filter.onClientRequest(first);
+        final ClientRequestGatewayExchange second = exchange("Bearer " + token(claims().issuer(OTHER_ISSUER).build(), JOSEObjectType.JWT, otherPrivateKey));
+        filter.onClientRequest(second);
+
+        verify(first, never()).shortCircuit(any());
+        verify(second, never()).shortCircuit(any());
+        assertThat(first.getAttachment(Identity.KEY).issuer()).isEqualTo(ISSUER);
+        assertThat(second.getAttachment(Identity.KEY).issuer()).isEqualTo(OTHER_ISSUER);
+    }
+
+    @Test
+    void oneIssuersKeyCannotVerifyATokenNamingAnother() throws Exception
+    {
+        // Signed by the first issuer's key, claiming to come from the second.
+        final ClientRequestGatewayExchange exchange = exchange("Bearer " + token(claims().issuer(OTHER_ISSUER).build()));
+
+        multiIssuerFilter(Map.of(ISSUER, keys, OTHER_ISSUER, otherKeys)).onClientRequest(exchange);
+
+        assertUnauthorized(exchange, INVALID_TOKEN);
+    }
+
+    @Test
+    void anUnlistedIssuerIsRefusedWithoutLookingUpAnyKeys() throws Exception
+    {
+        final AtomicInteger lookups = new AtomicInteger();
+        final JWKSource<SecurityContext> counting = (selector, context) ->
+        {
+            lookups.incrementAndGet();
+            return keys.get(selector, context);
+        };
+        final JwtAuthFactory.GF filter = multiIssuerFilter(Map.of(ISSUER, counting, OTHER_ISSUER, counting));
+
+        for (final String issuer : new String[]{"https://auth.example.com/realms/rogue", ISSUER + "/", null})
+        {
+            final ClientRequestGatewayExchange exchange = exchange("Bearer " + token(claims().issuer(issuer).build()));
+            filter.onClientRequest(exchange);
+            assertUnauthorized(exchange, INVALID_TOKEN);
+        }
+        assertThat(lookups).hasValue(0);
+    }
+
+    @Test
+    void unreachableKeysOfOneIssuerFailOnlyThatIssuersTokens() throws Exception
+    {
+        final JWKSource<SecurityContext> failing = (selector, context) ->
+        {
+            throw new RemoteKeySourceException("Couldn't retrieve JWK set", new IOException("connect timed out"));
+        };
+        final JwtAuthFactory.GF filter = multiIssuerFilter(Map.of(ISSUER, keys, OTHER_ISSUER, failing));
+
+        final ClientRequestGatewayExchange unaffected = exchange("Bearer " + token(claims().build()));
+        filter.onClientRequest(unaffected);
+        final ClientRequestGatewayExchange affected = exchange("Bearer " + token(claims().issuer(OTHER_ISSUER).build(), JOSEObjectType.JWT, otherPrivateKey));
+        filter.onClientRequest(affected);
+
+        verify(unaffected, never()).shortCircuit(any());
+        final ArgumentCaptor<ShortCircuitGatewayResponse> captor = ArgumentCaptor.forClass(ShortCircuitGatewayResponse.class);
+        verify(affected).shortCircuit(captor.capture());
+        assertThat(captor.getValue().status()).isEqualTo(HttpStatuses.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    void aTokenThatIsNotASignedJwtIsRefused()
+    {
+        // An unsecured token (alg none) is built here rather than written out: gitleaks reads a
+        // literal one as a leaked credential.
+        for (final String token : new String[]{"not-a-token", new PlainJWT(claims().build()).serialize()})
+        {
+            final ClientRequestGatewayExchange exchange = exchange("Bearer " + token);
+            filter(config()).onClientRequest(exchange);
+            assertUnauthorized(exchange, INVALID_TOKEN);
+        }
+    }
+
+    @Test
+    void theIssuerCanBeForwardedBesideTheSubject() throws Exception
+    {
+        final JwtAuthFactory.GF filter = filter(config(null, Map.of("iss", "X-User-Issuer", "sub", "X-User-Id"), false));
+        final ClientRequestGatewayExchange exchange = exchange("Bearer " + token(claims().build()));
+        filter.onClientRequest(exchange);
+
+        final UpstreamRequestGatewayExchange upstream = upstream(exchange, "X_User_Issuer", "https://auth.example.com/realms/rogue");
+        filter.onUpstreamRequest(upstream);
+
+        assertThat(upstream.upstreamRequest().headers().getFirst("X_User_Issuer")).isNull();
+        assertThat(upstream.upstreamRequest().headers().getAll("X-User-Issuer")).containsExactly(ISSUER);
+        assertThat(upstream.upstreamRequest().headers().getAll("X-User-Id")).containsExactly("6f1c2d3e");
+    }
+
+    @Test
+    void theJwksUrlDefaultsToTheIssuersKeycloakCertsEndpoint()
+    {
+        assertThat(new JwtAuthFactory.TrustedIssuer(ISSUER, null).jwksUrl()).isEqualTo(ISSUER + "/protocol/openid-connect/certs");
+        assertThat(new JwtAuthFactory.TrustedIssuer(ISSUER + "/", null).jwksUrl()).isEqualTo(ISSUER + "/protocol/openid-connect/certs");
+        assertThat(new JwtAuthFactory.TrustedIssuer(ISSUER, "https://keys.example.com/jwks").jwksUrl()).isEqualTo("https://keys.example.com/jwks");
+        assertThat(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(ISSUER, null))).trustedIssuers())
+                .extracting(JwtAuthFactory.TrustedIssuer::jwksUrl).containsExactly(ISSUER + "/protocol/openid-connect/certs");
+    }
+
+    @Test
+    void aWellFormedIssuerListValidatesAndBuildsTheKeySources()
+    {
+        final JwtAuthFactory.Config config = issuersConfig(List.of(
+                new JwtAuthFactory.TrustedIssuer(ISSUER, null),
+                new JwtAuthFactory.TrustedIssuer("urn:example:issuer", "https://keys.example.com/jwks")));
+        assertThat(errors(config)).isEmpty();
+        assertThat(new JwtAuthFactory().create(config, null)).isNotNull();
+    }
+
+    @Test
+    void badIssuerListsAreRefused()
+    {
+        assertThat(errors(issuersConfig(List.of()))).singleElement().asString().contains("'issuers' cannot be an empty list");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(ISSUER, null), new JwtAuthFactory.TrustedIssuer(ISSUER, "https://keys.example.com/jwks")))))
+                .singleElement().asString().contains("issuers[1].issuer").contains("listed already");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(ISSUER, "ftp://example.com/keys")))))
+                .singleElement().asString().contains("issuers[0].jwks_url").contains("http or https");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(ISSUER, "https:/keys")))))
+                .singleElement().asString().contains("issuers[0].jwks_url");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(ISSUER, " ")))))
+                .singleElement().asString().contains("issuers[0].jwks_url");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer("urn:example:issuer", null)))))
+                .singleElement().asString().contains("issuers[0].issuer").contains("set jwks_url");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(ISSUER + "?x=1", null)))))
+                .singleElement().asString().contains("issuers[0].issuer").contains("set jwks_url");
+        assertThat(errors(issuersConfig(List.of(new JwtAuthFactory.TrustedIssuer(" ", null)))))
+                .singleElement().asString().contains("issuers[0].issuer");
+        assertThat(errors(issuersConfig(java.util.Arrays.asList(new JwtAuthFactory.TrustedIssuer(ISSUER, null), null))))
+                .singleElement().asString().contains("issuers[1]");
+        assertThat(errors(new JwtAuthFactory.Config("https://auth.example.com/keys", ISSUER, List.of(new JwtAuthFactory.TrustedIssuer(OTHER_ISSUER, null)),
+                AUDIENCE, null, null, null, null, null)))
+                .singleElement().asString().contains("not both");
     }
 
     private void assertRefused(final String token)
@@ -390,7 +539,19 @@ class JwtAuthFactoryTest
 
     private static JwtAuthFactory.GF filter(final JwtAuthFactory.Config config)
     {
-        return new JwtAuthFactory.GF(config, JwtAuthFactory.buildJwtProcessor(config, keys));
+        return new JwtAuthFactory.GF(config, JwtAuthFactory.buildJwtProcessors(config, issuer -> keys));
+    }
+
+    private static JwtAuthFactory.GF multiIssuerFilter(final Map<String, JWKSource<SecurityContext>> keySources)
+    {
+        final JwtAuthFactory.Config config = issuersConfig(keySources.keySet().stream().map(issuer -> new JwtAuthFactory.TrustedIssuer(issuer, null)).toList());
+        assertThat(errors(config)).isEmpty();
+        return new JwtAuthFactory.GF(config, JwtAuthFactory.buildJwtProcessors(config, issuer -> keySources.get(issuer.issuer())));
+    }
+
+    private static JwtAuthFactory.Config issuersConfig(final List<JwtAuthFactory.TrustedIssuer> issuers)
+    {
+        return new JwtAuthFactory.Config(null, null, issuers, AUDIENCE, null, null, null, null, null);
     }
 
     private static JwtAuthFactory.Config config()
@@ -400,7 +561,7 @@ class JwtAuthFactoryTest
 
     private static JwtAuthFactory.Config config(final String usernameClaim, final Map<String, String> forwardClaims, final boolean forwardCredentials)
     {
-        return new JwtAuthFactory.Config("https://auth.example.com/keys", ISSUER, AUDIENCE, usernameClaim, null, null, forwardCredentials, forwardClaims);
+        return new JwtAuthFactory.Config("https://auth.example.com/keys", ISSUER, null, AUDIENCE, usernameClaim, null, null, forwardCredentials, forwardClaims);
     }
 
     private static JWTClaimsSet.Builder claims()
@@ -419,8 +580,13 @@ class JwtAuthFactoryTest
 
     private static String token(final JWTClaimsSet claims, final JOSEObjectType type) throws Exception
     {
+        return token(claims, type, privateKey);
+    }
+
+    private static String token(final JWTClaimsSet claims, final JOSEObjectType type, final RSAPrivateKey signingKey) throws Exception
+    {
         final SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").type(type).build(), claims);
-        jwt.sign(new RSASSASigner(privateKey));
+        jwt.sign(new RSASSASigner(signingKey));
         return jwt.serialize();
     }
 
