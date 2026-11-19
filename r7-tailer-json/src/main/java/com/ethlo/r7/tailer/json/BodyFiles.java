@@ -165,17 +165,18 @@ public final class BodyFiles implements AutoCloseable
         final Map<String, BodyRef> stored = new LinkedHashMap<>(2);
         final BodyRef requestRef = store(request, file, frames, stored);
         final BodyRef responseRef = store(response, file, frames, stored);
-        if (frames.size() == 0)
+        final byte[] appended = frames.toByteArray();
+        if (appended.length == 0)
         {
             return new Written(requestRef, responseRef, file, files.size(), 0, Map.of());
         }
 
         // The pointers were built relative to the start of this append; the append returns where
         // that is (a cut-back retried first can move it).
-        final long offset = files.append(frames.toByteArray());
+        final long offset = files.append(appended);
         final Map<String, BodyRef> placed = new LinkedHashMap<>(stored.size());
         stored.forEach((digest, ref) -> placed.put(digest, place(ref, offset)));
-        final Written written = new Written(place(requestRef, offset, stored), place(responseRef, offset, stored), file, offset, frames.size(), placed);
+        final Written written = new Written(place(requestRef, offset, stored), place(responseRef, offset, stored), file, offset, appended.length, placed);
         lastWrite = written;
         return written;
     }
