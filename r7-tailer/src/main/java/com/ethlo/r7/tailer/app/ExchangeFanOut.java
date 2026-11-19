@@ -21,6 +21,11 @@ import com.ethlo.r7.warc.WarcExchangeWriter;
  * otherwise every retry would archive the exchange once more. The WARC records are committed
  * (the dedup index learns their payloads) only once the JSON line is written too.
  * <p>
+ * <b>Unless the line may have got out.</b> Standard output can deliver a whole line and still
+ * report a failure. Taking the records back then would let later records overwrite the bytes a
+ * delivered line's {@code warc} pointer names, so they are kept and committed instead, and the
+ * retry of the same exchange points at them rather than archiving it again.
+ * <p>
  * Incomplete and abandoned exchanges go to the JSON output only, with their bodies: a WARC file
  * holds complete exchanges.
  */
@@ -31,6 +36,12 @@ final class ExchangeFanOut implements ExchangeCompletionListener
     private final WarcExchangeWriter warc;
     private final WarcOutputConfig.Exchanges warcExchanges;
     private final JsonLinesWriter json;
+
+    /**
+     * The records of the last exchange whose line may have got out, kept for its retry.
+     */
+    private String keptRequestId;
+    private WarcExchangeWriter.Written kept;
 
     /**
      * @param warc null when WARC output is off
@@ -51,7 +62,14 @@ final class ExchangeFanOut implements ExchangeCompletionListener
     public void onComplete(final JournalExchange exchange)
     {
         WarcExchangeWriter.Written written = null;
-        if (warc != null)
+        final boolean reused = kept != null && exchange.getRequestId().equals(keptRequestId);
+        if (reused)
+        {
+            written = kept;
+        }
+        kept = null;
+        keptRequestId = null;
+        if (warc != null && !reused)
         {
             if (archived(exchange))
             {
@@ -70,9 +88,21 @@ final class ExchangeFanOut implements ExchangeCompletionListener
                         ? new JsonLinesWriter.WarcPointer(written.location().file(), written.location().offset(), written.location().length())
                         : null, warc != null && warc.storesBodies());
             }
-            catch (final RuntimeException e)
+            catch (final JsonLinesWriter.LineMayHaveGotOutException e)
             {
                 if (written != null)
+                {
+                    written.commit();
+                    kept = written;
+                    keptRequestId = exchange.getRequestId();
+                }
+                throw e;
+            }
+            catch (final RuntimeException e)
+            {
+                // Records reused from an earlier attempt were committed then, and are not the
+                // file's last write to take back.
+                if (written != null && !reused)
                 {
                     discard(exchange, written, e);
                 }

@@ -95,6 +95,42 @@ class ExchangeFanOutTest
     }
 
     /**
+     * Standard output can deliver a line and then fail. The records that line points at stay, and
+     * every retry of the exchange points at them: nothing a delivered line names is overwritten,
+     * and a stdout that stays broken does not archive the exchange over and over.
+     */
+    @Test
+    void aLineThatMayHaveGotOutKeepsTheExchangesWarcRecords() throws IOException
+    {
+        final ByteArrayOutputStream json = new ByteArrayOutputStream();
+        try (WarcFileWriter files = warcFiles())
+        {
+            final ExchangeFanOut fanOut = fanOut(files, WarcOutputConfig.Exchanges.ALL, new DeliverThenFail(json, 3));
+            final JournalExchange exchange = exchange("req-1", "the body");
+
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                assertThatThrownBy(() -> fanOut.onComplete(exchange)).isInstanceOf(JsonLinesWriter.LineMayHaveGotOutException.class);
+            }
+            fanOut.onComplete(exchange);
+            fanOut.onComplete(exchange("req-2", "another body"));
+        }
+
+        final List<String> lines = lines(json);
+        assertThat(lines).hasSize(5);
+        final JsonNode delivered = MAPPER.readTree(lines.getFirst()).path("warc");
+        for (final String line : lines.subList(1, 4))
+        {
+            assertThat(MAPPER.readTree(line).path("warc")).isEqualTo(delivered);
+        }
+        assertThat(MAPPER.readTree(lines.get(4)).path("warc").path("offset").asLong())
+                .isGreaterThan(delivered.path("offset").asLong());
+        final String warc = warcText();
+        assertThat(count(warc, "WARC-Type: response")).as("each exchange archived once").isEqualTo(2);
+        assertThat(warc).contains("the body").contains("another body");
+    }
+
+    /**
      * With {@code exchanges: with_body}, only exchanges with a captured body get WARC records;
      * the others are in the JSON output alone, with no pointer.
      */
@@ -257,9 +293,40 @@ class ExchangeFanOutTest
     }
 
     /**
-     * Fails the first write, standing in for a disk that is briefly full.
+     * Fails the first write before any of it gets out, standing in for a briefly full disk under
+     * {@code output: file}, which writes a line whole or not at all.
      */
-    private static final class FailOnce extends FilterOutputStream
+    /**
+     * Passes every line through and fails the first {@code failures} flushes after it, as standard
+     * output can.
+     */
+    private static final class DeliverThenFail extends FilterOutputStream
+    {
+        private int failures;
+
+        DeliverThenFail(final OutputStream out, final int failures)
+        {
+            super(out);
+            this.failures = failures;
+        }
+
+        @Override
+        public void write(final byte[] b, final int off, final int len) throws IOException
+        {
+            out.write(b, off, len);
+        }
+
+        @Override
+        public void flush() throws IOException
+        {
+            if (failures-- > 0)
+            {
+                throw new IOException("failed after delivery (test double)");
+            }
+        }
+    }
+
+    private static final class FailOnce extends FilterOutputStream implements JsonLinesWriter.AtomicLines
     {
         private boolean failed;
 
