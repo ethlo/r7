@@ -17,7 +17,23 @@ reshaping the lines in Vector's VRL instead costs several times the CPU.
 
 ## Setup
 
-1. Write JSON lines to files, with bodies in body files if you keep bodies, in `tailer.yaml`:
+1. Write JSON lines to files, in `tailer.yaml`. Where the bodies go decides whether
+   `request_body` and `response_body` are filled.
+
+   **Bodies in ClickHouse**, as cloud-gateway stores them: each body travels in its line,
+   base64-encoded, and the view decodes it into the column.
+
+   ```yaml
+   warc:
+     enabled: false
+   json:
+     output: file
+     output_dir: /json
+     bodies: inline
+   ```
+
+   **Bodies beside ClickHouse**: each body goes to a body file, and the row holds only where
+   to find it (`*_body_file`, `*_body_offset`, `*_body_length`).
 
    ```yaml
    warc:
@@ -29,6 +45,14 @@ reshaping the lines in Vector's VRL instead costs several times the CPU.
      body_files:
        output_dir: /bodies
    ```
+
+   Inline bodies make each line larger by about four thirds of its bodies, and everything on
+   the way to ClickHouse scales with line size: the tailer's writes, Vector's reads and the
+   view's parsing. ClickHouse stores the decoded bodies zstd-compressed. Bodies are only
+   journaled at `FULL`; cap them per direction with
+   [`truncate_body_at`](https://r7.ethlo.com/journaling/#capping-bodies), for example
+   `response: { level: FULL, truncate_body_at: 64KB }` on a journal rule, and keep Vector's
+   `max_line_bytes` above the largest line.
 
 2. Run `r7_lines.sql` in the database that holds `log`.
 3. Set your ClickHouse host, database and user in `vector.yaml`, put the password in
@@ -52,7 +76,7 @@ reshaping the lines in Vector's VRL instead costs several times the CPU.
 | `query` | Empty, as cloud-gateway leaves it |
 | `query_params` | The parameters on r7's `safe_query_parameters`, as sent (not percent-decoded); fingerprinted ones are left out, as cloud-gateway leaves out parameters not on its accept list |
 | `*_body_size`, `*_total_size` | `body_bytes`, and `header_bytes` plus `body_bytes`, of the client legs; empty above the column's Int32 range |
-| `request_body`, `response_body` | A body in the line (`json.bodies: inline`) with a text content type and no `Content-Encoding`; binary and compressed bodies stay out |
+| `request_body`, `response_body` | A body in the line (`json.bodies: inline`) with a text content type and no `Content-Encoding`; binary and compressed bodies stay out. A body cut by `truncate_body_at` is stored as its kept prefix |
 | `*_body_file`, `*_body_offset`, `*_body_length` | `body_ref` of the client legs: read `length` bytes at `offset` and `zstd -d` them |
 
 Only exchanges a journal rule picked are loaded, as cloud-gateway logs only matched ones. Lines
