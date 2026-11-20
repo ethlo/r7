@@ -1,0 +1,62 @@
+# Ships r7's JSON lines into ClickHouse as they are. No parsing in Vector: the materialized view
+# in r7_lines.sql turns each line into a row of cloud-gateway's `log` table. Run r7_lines.sql in
+# that database once before starting Vector. Written against Vector 0.59 and ClickHouse 26.8.
+#
+# Tailer: json.output: file, output_dir /json. Volumes: /var/lib/vector (read positions)
+# must be persistent; /json must be writable by Vector while remove_after_secs is on.
+data_dir: /var/lib/vector
+
+# Vector does not expand ${...} in its config by default, so the password is read from a file:
+# /run/secrets/clickhouse_password (a Docker or Kubernetes secret). An empty file is refused;
+# for a user without a password, remove the sink's `auth` block.
+secret:
+  run:
+    type: directory
+    path: /run/secrets
+    remove_trailing_whitespace: true
+
+sources:
+  r7_json:
+    type: file
+    include: [/json/*.jsonl]          # sealed files only; .jsonl.open is still being written
+    read_from: beginning
+    max_line_bytes: 67108864
+    # Delete a sealed file 7 days after Vector read it to the end, keeping a window to reload
+    # the table. Remove this line if something else owns retention of /json.
+    remove_after_secs: 604800
+
+transforms:
+  # Only exchanges a journal rule picked are loaded, as cloud-gateway logs only matched ones.
+  # A plain substring test; the view's WHERE has the exact check.
+  ruled:
+    type: filter
+    inputs: [r7_json]
+    condition: contains(string!(.message), "\"gateway.journal.rule\"")
+
+sinks:
+  clickhouse:
+    type: http
+    inputs: [ruled]
+    # Your ClickHouse host and the database that holds `log`.
+    uri: "http://clickhouse:8123/?database=default&query=INSERT+INTO+r7_lines+FORMAT+LineAsString"
+    method: post
+    auth:
+      strategy: basic
+      user: default
+      password: "SECRET[run.clickhouse_password]"
+    encoding:
+      codec: text                     # the line exactly as the tailer wrote it
+    framing:
+      method: newline_delimited
+    batch:
+      max_bytes: 10000000
+      timeout_secs: 5
+    # The .jsonl files are the durable copy: with acknowledgements on, a read position moves only
+    # once ClickHouse has accepted the batch, so a crash re-reads from the files. A disk buffer
+    # would store every line a second time for no extra safety.
+    buffer:
+      type: memory
+      max_events: 10000
+      when_full: block                # back-pressure: stop reading, never drop
+    acknowledgements:
+      enabled: true
