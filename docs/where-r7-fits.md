@@ -86,9 +86,12 @@ service:
 
 ### Vector into ClickHouse
 
-[Vector](https://vector.dev/docs/) reads the files and inserts the exchanges into ClickHouse in
-batches. Vector keeps its read positions in its `data_dir`, which must be persistent. Written
-against Vector 0.59:
+[Vector](https://vector.dev/docs/) reads the files and posts the lines to ClickHouse in batches,
+as they are: ClickHouse parses each line itself (`FORMAT JSONEachRow`), so Vector never parses
+JSON, which is most of its CPU per line otherwise. Vector keeps its read positions in its
+`data_dir`, which must be persistent; with acknowledgements on, a position moves only once
+ClickHouse has taken the batch, so a restart reads again from the files and a memory buffer is
+enough. Written against Vector 0.59:
 
 <!-- docs-check: skip -->
 ```yaml
@@ -99,24 +102,28 @@ sources:
     read_from: beginning
     max_line_bytes: 16777216
 
-transforms:
-  r7_exchanges:
-    type: remap
-    inputs: [r7]
-    source: . = parse_json!(string!(.message))
-
 sinks:
   clickhouse:
-    type: clickhouse
-    inputs: [r7_exchanges]
-    endpoint: http://clickhouse:8123
-    database: default
-    table: r7_exchanges
-    skip_unknown_fields: true
-    date_time_best_effort: true
+    type: http
+    inputs: [r7]
+    uri: "http://clickhouse:8123/?database=default&query=INSERT+INTO+r7_exchanges+FORMAT+JSONEachRow&input_format_skip_unknown_fields=1&date_time_input_format=best_effort&input_format_allow_errors_num=100"
+    encoding:
+      codec: text          # the line exactly as the tailer wrote it
+    framing:
+      method: newline_delimited
+    batch:
+      timeout_secs: 5
+    buffer:
+      type: memory
+      when_full: block
+    acknowledgements:
+      enabled: true
 ```
 
-A table for it, written against ClickHouse 25.8. Each of the four legs lands in a `JSON` column,
+`input_format_allow_errors_num` keeps one line that is not JSON from failing its whole batch; the
+tailer writes whole lines only, so it is a guard, not a filter.
+
+A table for it, written against ClickHouse 26.8. Each of the four legs lands in a `JSON` column,
 so a field such as `client_response.status` is queried by its path. An exchange the tailer gave up
 on carries `incomplete` and has no `start`, `duration` or `route_id`, so those columns stay empty
 for it rather than reading as a real zero:
@@ -143,6 +150,11 @@ ORDER BY (route_id, ifNull(start, toDateTime64(0, 6, 'UTC')));
 ClickHouse is a queryable copy here, not the archive: the WARC files are. Keep the sealed `.jsonl`
 files for as long as you may want to load a table again, since some fields of a row, such as
 `route_id` and `duration`, are only in the JSON line.
+
+Moving off a gateway that already logs to a ClickHouse table of its own? A materialized view can
+write the lines into that table's shape, so its queries and dashboards keep working:
+[`migrations/cloud-gateway`](https://github.com/ethlo/r7/tree/main/migrations/cloud-gateway)
+does this for [cloud-gateway](https://github.com/ethlo/cloud-gateway)'s `log` table.
 
 ### Loki and other shippers
 
