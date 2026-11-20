@@ -1036,9 +1036,12 @@ them. Written against <code>otelcol-contrib</code> 0.162:</p>
 </span><span id="True-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="nt">exporters</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">otlphttp</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
 <h3 id="vector-into-clickhouse">Vector into ClickHouse</h3>
-<p><a href="https://vector.dev/docs/">Vector</a> reads the files and inserts the exchanges into ClickHouse in
-batches. Vector keeps its read positions in its <code>data_dir</code>, which must be persistent. Written
-against Vector 0.59:</p>
+<p><a href="https://vector.dev/docs/">Vector</a> reads the files and posts the lines to ClickHouse in batches,
+as they are: ClickHouse parses each line itself (<code>FORMAT JSONEachRow</code>), so Vector never parses
+JSON, which is most of its CPU per line otherwise. Vector keeps its read positions in its
+<code>data_dir</code>, which must be persistent; with acknowledgements on, a position moves only once
+ClickHouse has taken the batch, so a restart reads again from the files and a memory buffer is
+enough. Written against Vector 0.59:</p>
 <!-- docs-check: skip -->
 <div class="language-yaml highlight"><pre><span></span><code><span id="True-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">sources</span><span class="p">:</span>
 </span><span id="True-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">r7</span><span class="p">:</span>
@@ -1047,23 +1050,26 @@ against Vector 0.59:</p>
 </span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">read_from</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">beginning</span>
 </span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">max_line_bytes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16777216</span>
 </span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-</span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nt">transforms</span><span class="p">:</span>
-</span><span id="True-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">r7_exchanges</span><span class="p">:</span>
-</span><span id="True-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">remap</span>
+</span><span id="True-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="nt">sinks</span><span class="p">:</span>
+</span><span id="True-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">clickhouse</span><span class="p">:</span>
+</span><span id="True-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http</span>
 </span><span id="True-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">inputs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">r7</span><span class="p p-Indicator">]</span>
-</span><span id="True-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">. = parse_json!(string!(.message))</span>
-</span><span id="True-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>
-</span><span id="True-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="nt">sinks</span><span class="p">:</span>
-</span><span id="True-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="nt">clickhouse</span><span class="p">:</span>
-</span><span id="True-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">clickhouse</span>
-</span><span id="True-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">inputs</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">r7_exchanges</span><span class="p p-Indicator">]</span>
-</span><span id="True-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://clickhouse:8123</span>
-</span><span id="True-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
-</span><span id="True-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="nt">table</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">r7_exchanges</span>
-</span><span id="True-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="nt">skip_unknown_fields</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="True-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="nt">date_time_best_effort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="True-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="s">"http://clickhouse:8123/?database=default&amp;query=INSERT+INTO+r7_exchanges+FORMAT+JSONEachRow&amp;input_format_skip_unknown_fields=1&amp;date_time_input_format=best_effort&amp;input_format_allow_errors_num=100"</span>
+</span><span id="True-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">encoding</span><span class="p">:</span>
+</span><span id="True-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">      </span><span class="nt">codec</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">text</span><span class="w">          </span><span class="c1"># the line exactly as the tailer wrote it</span>
+</span><span id="True-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nt">framing</span><span class="p">:</span>
+</span><span id="True-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">      </span><span class="nt">method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">newline_delimited</span>
+</span><span id="True-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">batch</span><span class="p">:</span>
+</span><span id="True-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">      </span><span class="nt">timeout_secs</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</span><span id="True-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="nt">buffer</span><span class="p">:</span>
+</span><span id="True-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">memory</span>
+</span><span id="True-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">      </span><span class="nt">when_full</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">block</span>
+</span><span id="True-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="nt">acknowledgements</span><span class="p">:</span>
+</span><span id="True-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
-<p>A table for it, written against ClickHouse 25.8. Each of the four legs lands in a <code>JSON</code> column,
+<p><code>input_format_allow_errors_num</code> keeps one line that is not JSON from failing its whole batch; the
+tailer writes whole lines only, so it is a guard, not a filter.</p>
+<p>A table for it, written against ClickHouse 26.8. Each of the four legs lands in a <code>JSON</code> column,
 so a field such as <code>client_response.status</code> is queried by its path. An exchange the tailer gave up
 on carries <code>incomplete</code> and has no <code>start</code>, <code>duration</code> or <code>route_id</code>, so those columns stay empty
 for it rather than reading as a real zero:</p>
@@ -1087,6 +1093,10 @@ for it rather than reading as a real zero:</p>
 <p>ClickHouse is a queryable copy here, not the archive: the WARC files are. Keep the sealed <code>.jsonl</code>
 files for as long as you may want to load a table again, since some fields of a row, such as
 <code>route_id</code> and <code>duration</code>, are only in the JSON line.</p>
+<p>Moving off a gateway that already logs to a ClickHouse table of its own? A materialized view can
+write the lines into that table's shape, so its queries and dashboards keep working:
+<a href="https://github.com/ethlo/r7/tree/main/migrations/cloud-gateway"><code>migrations/cloud-gateway</code></a>
+does this for <a href="https://github.com/ethlo/cloud-gateway">cloud-gateway</a>'s <code>log</code> table.</p>
 <h3 id="loki-and-other-shippers">Loki and other shippers</h3>
 <p>Promtail, Fluent Bit and Docker's logging drivers read the tailer's standard output or the
 <code>.jsonl</code> files like any other JSON log. In Grafana, LogQL's <code>json</code> parser turns the fields into
