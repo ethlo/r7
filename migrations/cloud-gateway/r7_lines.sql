@@ -51,12 +51,15 @@ WITH
     nullIf(arrayElement(mapValues(h_rq_ct), 1)[1], '') AS rq_ct,
     nullIf(arrayElement(mapValues(h_rs_ct), 1)[1], '') AS rs_ct,
     -- Query parameters r7 fingerprinted (outside safe_query_parameters) are left out, as
-    -- cloud-gateway leaves out parameters that are not accept-listed.
+    -- cloud-gateway leaves out parameters that are not accept-listed. Names and values stay
+    -- as sent, not percent-decoded, as cloud-gateway stores them.
     arrayFilter(p -> NOT startsWith(p.1, 'fp:') AND NOT startsWith(p.2, 'fp:'),
-        arrayMap(s -> (decodeURLFormComponent(if(position(s, '=') > 0, substring(s, 1, position(s, '=') - 1), s)),
-                       decodeURLFormComponent(if(position(s, '=') > 0, substring(s, position(s, '=') + 1), ''))),
-                 if(rq.query = '', [], splitByChar('&', rq.query)))) AS qp,
+        arrayMap(s -> (if(position(s, '=') > 0, substring(s, 1, position(s, '=') - 1), s),
+                       if(position(s, '=') > 0, substring(s, position(s, '=') + 1), '')),
+                 arrayFilter(s -> s != '', splitByChar('&', rq.query)))) AS qp,
     arrayDistinct(arrayMap(p -> p.1, qp)) AS qnames,
+    ifNull(rq.header_bytes, 0) + ifNull(rq.body_bytes, 0) AS rq_total,
+    ifNull(rs.header_bytes, 0) + ifNull(rs.body_bytes, 0) AS rs_total,
     -- A body sent with a Content-Encoding (gzip, br, ...) is journaled as sent, compressed.
     arrayExists(k -> lower(k) = 'content-encoding' AND lower(arrayStringConcat(rq.headers[k], '')) NOT IN ('', 'identity'), mapKeys(rq.headers)) AS rq_encoded,
     arrayExists(k -> lower(k) = 'content-encoding' AND lower(arrayStringConcat(rs.headers[k], '')) NOT IN ('', 'identity'), mapKeys(rs.headers)) AS rs_encoded,
@@ -87,10 +90,11 @@ SELECT
              mapFilter((k, v) -> lower(k) NOT IN ('host', 'user-agent', 'content-type'), rq.headers))
                                                                                AS request_headers,
     mapApply((k, v) -> (k, arrayStringConcat(v, ', ')), rs.headers)            AS response_headers,
-    toInt32OrNull(toString(rq.body_bytes))                                     AS request_body_size,
-    toInt32OrNull(toString(rs.body_bytes))                                     AS response_body_size,
-    toInt32OrNull(toString(ifNull(rq.header_bytes, 0) + ifNull(rq.body_bytes, 0))) AS request_total_size,
-    toInt32OrNull(toString(ifNull(rs.header_bytes, 0) + ifNull(rs.body_bytes, 0))) AS response_total_size,
+    -- The table's size columns are Int32: a larger size is left empty rather than wrapped.
+    if(rq.body_bytes <= 2147483647, toInt32(rq.body_bytes), NULL)                AS request_body_size,
+    if(rs.body_bytes <= 2147483647, toInt32(rs.body_bytes), NULL)                AS response_body_size,
+    if(rq_total <= 2147483647, toInt32(rq_total), NULL)                          AS request_total_size,
+    if(rs_total <= 2147483647, toInt32(rs_total), NULL)                          AS response_total_size,
     -- Inline bodies (json.bodies: inline) only for uncompressed text; binary and encoded bodies stay out.
     if(rq.body IS NOT NULL AND NOT rq_encoded AND match(ifNull(rq_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rq.body)), NULL) AS request_body,
     if(rs.body IS NOT NULL AND NOT rs_encoded AND match(ifNull(rs_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rs.body)), NULL) AS response_body,
