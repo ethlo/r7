@@ -63,6 +63,9 @@ of exchanges the tailer gave up on (`incomplete`) are skipped.
 - Header and query values outside r7's safe lists are `fp:` fingerprints, where cloud-gateway
   logs headers as sent unless told otherwise. See
   [redaction](https://r7.ethlo.com/journaling/#redacted-header-and-query-parameter-values).
+- A parameter with an empty value (`?token=`) is kept in `query_params` even when it is not on
+  `safe_query_parameters`: r7 has nothing to fingerprint there, so it stays empty, and the view
+  cannot tell it from a safe one. cloud-gateway drops it.
 - `Content-Type` is the value as sent; cloud-gateway normalises it.
 - A compressed inline body stays out; cloud-gateway decompresses it before storing. Use body
   files (`body_ref`) for those.
