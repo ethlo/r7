@@ -52,11 +52,11 @@ reshaping the lines in Vector's VRL instead costs several times the CPU.
 | `query` | Empty, as cloud-gateway leaves it |
 | `query_params` | The parameters on r7's `safe_query_parameters`; fingerprinted ones are left out, as cloud-gateway leaves out parameters not on its accept list |
 | `*_body_size`, `*_total_size` | `body_bytes`, and `header_bytes` plus `body_bytes`, of the client legs |
-| `request_body`, `response_body` | A body in the line (`json.bodies: inline`) with a text content type; binary bodies stay out |
+| `request_body`, `response_body` | A body in the line (`json.bodies: inline`) with a text content type and no `Content-Encoding`; binary and compressed bodies stay out |
 | `*_body_file`, `*_body_offset`, `*_body_length` | `body_ref` of the client legs: read `length` bytes at `offset` and `zstd -d` them |
 
 Only exchanges a journal rule picked are loaded, as cloud-gateway logs only matched ones. Lines
-of exchanges the tailer gave up on (`incomplete`, no `start` or status) are skipped.
+of exchanges the tailer gave up on (`incomplete`) are skipped.
 
 ## What differs from cloud-gateway's rows
 
@@ -64,5 +64,7 @@ of exchanges the tailer gave up on (`incomplete`, no `start` or status) are skip
   logs headers as sent unless told otherwise. See
   [redaction](https://r7.ethlo.com/journaling/#redacted-header-and-query-parameter-values).
 - `Content-Type` is the value as sent; cloud-gateway normalises it.
+- A compressed inline body stays out; cloud-gateway decompresses it before storing. Use body
+  files (`body_ref`) for those.
 - `request_raw`, `response_raw`, `exception_type` and `exception_message` stay empty: r7 has no
   equivalent. The exchange's record is the JSON line, and the WARC records if you archive.

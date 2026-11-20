@@ -24,6 +24,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS r7_lines_to_log TO log AS
 WITH
     JSONExtract(line, 'Tuple(
         request_id String,
+        incomplete Nullable(String),
         route_id String,
         start Nullable(String),
         duration Nullable(Float64),
@@ -52,10 +53,13 @@ WITH
     -- Query parameters r7 fingerprinted (outside safe_query_parameters) are left out, as
     -- cloud-gateway leaves out parameters that are not accept-listed.
     arrayFilter(p -> NOT startsWith(p.1, 'fp:') AND NOT startsWith(p.2, 'fp:'),
-        arrayMap(s -> (decodeURLFormComponent(splitByChar('=', s, 2)[1]),
-                       decodeURLFormComponent(if(position(s, '=') > 0, splitByChar('=', s, 2)[2], ''))),
+        arrayMap(s -> (decodeURLFormComponent(if(position(s, '=') > 0, substring(s, 1, position(s, '=') - 1), s)),
+                       decodeURLFormComponent(if(position(s, '=') > 0, substring(s, position(s, '=') + 1), ''))),
                  if(rq.query = '', [], splitByChar('&', rq.query)))) AS qp,
     arrayDistinct(arrayMap(p -> p.1, qp)) AS qnames,
+    -- A body sent with a Content-Encoding (gzip, br, ...) is journaled as sent, compressed.
+    arrayExists(k -> lower(k) = 'content-encoding' AND lower(arrayStringConcat(rq.headers[k], '')) NOT IN ('', 'identity'), mapKeys(rq.headers)) AS rq_encoded,
+    arrayExists(k -> lower(k) = 'content-encoding' AND lower(arrayStringConcat(rs.headers[k], '')) NOT IN ('', 'identity'), mapKeys(rs.headers)) AS rs_encoded,
     '(?i)^(text/|application/([a-z0-9.+-]*\\+)?(json|xml|x-www-form-urlencoded|javascript|graphql))' AS text_ct
 SELECT
     parseDateTime64BestEffort(assumeNotNull(e.start), 3, 'UTC')                AS timestamp,
@@ -87,9 +91,9 @@ SELECT
     toInt32OrNull(toString(rs.body_bytes))                                     AS response_body_size,
     toInt32OrNull(toString(ifNull(rq.header_bytes, 0) + ifNull(rq.body_bytes, 0))) AS request_total_size,
     toInt32OrNull(toString(ifNull(rs.header_bytes, 0) + ifNull(rs.body_bytes, 0))) AS response_total_size,
-    -- Inline bodies (json.bodies: inline) only for text; binary stays out.
-    if(rq.body IS NOT NULL AND match(ifNull(rq_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rq.body)), NULL) AS request_body,
-    if(rs.body IS NOT NULL AND match(ifNull(rs_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rs.body)), NULL) AS response_body,
+    -- Inline bodies (json.bodies: inline) only for uncompressed text; binary and encoded bodies stay out.
+    if(rq.body IS NOT NULL AND NOT rq_encoded AND match(ifNull(rq_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rq.body)), NULL) AS request_body,
+    if(rs.body IS NOT NULL AND NOT rs_encoded AND match(ifNull(rs_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rs.body)), NULL) AS response_body,
     rq.body_ref.file                                                           AS request_body_file,
     rq.body_ref.offset                                                         AS request_body_offset,
     rq.body_ref.length                                                         AS request_body_length,
@@ -97,12 +101,15 @@ SELECT
     rs.body_ref.offset                                                         AS response_body_offset,
     rs.body_ref.length                                                         AS response_body_length
 FROM r7_lines
--- A journal rule picked the exchange, and it completed (an incomplete one has no start or status).
+-- A journal rule picked the exchange, and it completed.
 WHERE has(mapKeys(e.attributes), 'gateway.journal.rule')
+  AND e.incomplete IS NULL
   AND e.start IS NOT NULL
   AND rs.status IS NOT NULL;
 
--- Lines that are not JSON, kept short for a look, then dropped after 30 days.
+-- Lines that reach ClickHouse but are not JSON, kept short for a look, then dropped after 30
+-- days. Vector forwards only lines that mention a journal rule, so this catches a broken one of
+-- those; the tailer itself writes whole lines only.
 CREATE TABLE IF NOT EXISTS r7_rejected
 (
     received DateTime DEFAULT now(),

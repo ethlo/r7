@@ -3,7 +3,7 @@
 # that database once before starting Vector. Written against Vector 0.59 and ClickHouse 26.8.
 #
 # Tailer: json.output: file, output_dir /json. Volumes: /var/lib/vector (read positions)
-# must be persistent; /json must be writable by Vector while remove_after_secs is on.
+# must be persistent; Vector only reads /json.
 data_dir: /var/lib/vector
 
 # Vector does not expand ${...} in its config by default, so the password is read from a file:
@@ -21,9 +21,8 @@ sources:
     include: [/json/*.jsonl]          # sealed files only; .jsonl.open is still being written
     read_from: beginning
     max_line_bytes: 67108864
-    # Delete a sealed file 7 days after Vector read it to the end, keeping a window to reload
-    # the table. Remove this line if something else owns retention of /json.
-    remove_after_secs: 604800
+    # Vector does not delete the files: its remove_after_secs counts from reading a file to the
+    # end, not from ClickHouse taking the lines. Retention of /json is up to you.
 
 transforms:
   # Only exchanges a journal rule picked are loaded, as cloud-gateway logs only matched ones.
