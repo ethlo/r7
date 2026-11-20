@@ -21,7 +21,9 @@ reshaping the lines in Vector's VRL instead costs several times the CPU.
    `request_body` and `response_body` are filled.
 
    **Bodies in ClickHouse**, as cloud-gateway stores them: each body travels in its line,
-   base64-encoded, and the view decodes it into the column.
+   base64-encoded, and the view decodes it into the column. Only text bodies (`text/*`, JSON,
+   XML, form, JavaScript, GraphQL) without a `Content-Encoding` are loaded; others stay
+   empty, see [How a row is filled](#how-a-row-is-filled).
 
    ```yaml
    warc:
