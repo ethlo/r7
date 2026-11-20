@@ -34,7 +34,7 @@ theme:
     - toc.integrate
     - announce.dismiss
   logo: assets/r7.svg
-  favicon: assets/r7.svg
+  favicon: assets/r7-icon.svg
   font:
     text: Inter Tight
     code: JetBrains Mono
