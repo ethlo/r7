@@ -59,11 +59,7 @@ WITH
                  arrayFilter(s -> s != '', splitByChar('&', rq.query)))) AS qp,
     arrayDistinct(arrayMap(p -> p.1, qp)) AS qnames,
     ifNull(rq.header_bytes, 0) + ifNull(rq.body_bytes, 0) AS rq_total,
-    ifNull(rs.header_bytes, 0) + ifNull(rs.body_bytes, 0) AS rs_total,
-    -- A body sent with a Content-Encoding (gzip, br, ...) is journaled as sent, compressed.
-    arrayExists(k -> lower(k) = 'content-encoding' AND lower(arrayStringConcat(rq.headers[k], '')) NOT IN ('', 'identity'), mapKeys(rq.headers)) AS rq_encoded,
-    arrayExists(k -> lower(k) = 'content-encoding' AND lower(arrayStringConcat(rs.headers[k], '')) NOT IN ('', 'identity'), mapKeys(rs.headers)) AS rs_encoded,
-    '(?i)^(text/|application/([a-z0-9.+-]*\\+)?(json|xml|x-www-form-urlencoded|javascript|graphql))' AS text_ct
+    ifNull(rs.header_bytes, 0) + ifNull(rs.body_bytes, 0) AS rs_total
 SELECT
     parseDateTime64BestEffort(assumeNotNull(e.start), 3, 'UTC')                AS timestamp,
     e.route_id                                                                 AS route_id,
@@ -95,9 +91,10 @@ SELECT
     if(rs.body_bytes <= 2147483647, toInt32(rs.body_bytes), NULL)                AS response_body_size,
     if(rq_total <= 2147483647, toInt32(rq_total), NULL)                          AS request_total_size,
     if(rs_total <= 2147483647, toInt32(rs_total), NULL)                          AS response_total_size,
-    -- Inline bodies (json.bodies: inline) only for uncompressed text; binary and encoded bodies stay out.
-    if(rq.body IS NOT NULL AND NOT rq_encoded AND match(ifNull(rq_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rq.body)), NULL) AS request_body,
-    if(rs.body IS NOT NULL AND NOT rs_encoded AND match(ifNull(rs_ct, ''), text_ct), tryBase64Decode(assumeNotNull(rs.body)), NULL) AS response_body,
+    -- Inline bodies (json.bodies: inline), as journaled: binary bodies as bytes, a body sent with a
+    -- Content-Encoding (gzip, br, ...) still compressed.
+    tryBase64Decode(rq.body)                                                   AS request_body,
+    tryBase64Decode(rs.body)                                                   AS response_body,
     rq.body_ref.file                                                           AS request_body_file,
     rq.body_ref.offset                                                         AS request_body_offset,
     rq.body_ref.length                                                         AS request_body_length,
