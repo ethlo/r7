@@ -55,7 +55,8 @@ reshaping the lines in Vector's VRL instead costs several times the CPU.
    `response: { level: FULL, truncate_body_at: 64KB }` on a journal rule, and keep Vector's
    `max_line_bytes` above the largest line.
 
-2. Run `r7_lines.sql` in the database that holds `log`.
+2. Run `r7_lines.sql` in the database that holds `log`. Running it again after an update
+   recreates the views and keeps every table; stop Vector while it runs.
 3. Set your ClickHouse host, database and user in `vector.yaml`, put the password in
    `/run/secrets/clickhouse_password`, and start Vector. It needs a persistent `/var/lib/vector`.
 

@@ -1,5 +1,7 @@
 -- r7's JSON lines into cloud-gateway's `log` table, in the shape cloud-gateway writes its rows.
--- Run once in the database that holds `log`. Written against ClickHouse 26.8.
+-- Run in the database that holds `log`. Written against ClickHouse 26.8.
+-- Safe to run again to pick up a newer version: tables are kept, the views are recreated (rows
+-- stay in `log`). Stop Vector first, as lines sent while a view is missing are not loaded.
 --
 -- Vector posts the lines as they are (FORMAT LineAsString) into r7_lines, a Null table that
 -- stores nothing; the materialized view parses each line once and writes the row to `log`.
@@ -20,7 +22,8 @@ CREATE TABLE IF NOT EXISTS r7_lines
 )
 ENGINE = Null;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS r7_lines_to_log TO log AS
+DROP VIEW IF EXISTS r7_lines_to_log;
+CREATE MATERIALIZED VIEW r7_lines_to_log TO log AS
 WITH
     JSONExtract(line, 'Tuple(
         request_id String,
@@ -120,7 +123,8 @@ ENGINE = MergeTree
 ORDER BY received
 TTL received + INTERVAL 30 DAY;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS r7_lines_rejected TO r7_rejected AS
+DROP VIEW IF EXISTS r7_lines_rejected;
+CREATE MATERIALIZED VIEW r7_lines_rejected TO r7_rejected AS
 SELECT now() AS received, left(line, 2048) AS line
 FROM r7_lines
 WHERE NOT isValidJSON(line);
