@@ -4408,7 +4408,7 @@
 </span></code></pre></div>
 <div class="language-bash highlight"><pre><span></span><code><span id="True-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--env-file<span class="w"> </span>.env<span class="w"> </span><span class="se">\</span>
 </span><span id="True-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/routes.yaml:/app/config/routes.yaml:ro"</span><span class="w"> </span><span class="se">\</span>
-</span><span id="True-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:main<span class="w"> </span>--validate-only
+</span><span id="True-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:1.0.0-beta.2<span class="w"> </span>--validate-only
 </span></code></pre></div>
 <p>A valid configuration prints one line on stdout and exits <code>0</code>:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="True-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>routes.yaml OK, with the built-in server defaults (no server.yaml)

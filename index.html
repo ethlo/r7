@@ -1028,7 +1028,7 @@ while the client waits. One <code>routes.yaml</code>, checked before it serves a
 </span><span id="True-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span>--env-file<span class="w"> </span>.env<span class="w"> </span><span class="se">\</span>
 </span><span id="True-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span>-v<span class="w"> </span><span class="s2">"</span><span class="nv">$PWD</span><span class="s2">/routes.yaml:/app/config/routes.yaml:ro"</span><span class="w"> </span><span class="se">\</span>
 </span><span id="True-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span>-v<span class="w"> </span>r7-journals:/journals<span class="w"> </span><span class="se">\</span>
-</span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:main
+</span><span id="True-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span>ghcr.io/ethlo/r7-gateway:1.0.0-beta.2
 </span></code></pre></div>
 <p>Requests to <code>http://localhost:8888/api/...</code> now reach your service on port 3000, and every one of
 them is written with its headers to the journal, kept in the <code>r7-journals</code> volume. Open <code>http://localhost:18888</code> to see your routes,
